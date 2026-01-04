@@ -23,24 +23,20 @@ GroupMembersdf = pd.read_sql("SELECT * FROM tbl_GroupMembers", get_SQL_connectio
 
 Group_Management = GroupManager(None,GroupMasterdf,GroupMembersdf,get_SQL_engine(),get_SQL_connection())
 
-# def extract_search_parameters(filtered_roles_data):
-#     search_bankid = request.form.get('search_bankid')
-#     search_channel = request.form.get('search_channel')
-#     search_mcc = request.form.get('search_mcc')
-#     search_status = request.form.get('search_status')
-#     if search_bankid:
-#         filtered_roles_data = filtered_roles_data[filtered_roles_data['bankid'].astype(str).str.contains(search_bankid.strip())]
-#     if search_channel != None and search_channel != '':
-#         filtered_roles_data = filtered_roles_data[
-#             filtered_roles_data['BlockedChannels'].str.contains(search_channel.strip(), case=False)]
-#     if search_mcc != None and search_mcc != '':
-#         filtered_roles_data = filtered_roles_data[
-#             filtered_roles_data['BlockedMCCs'].str.contains(search_mcc.strip(), case=False)]
-#     if search_status != None and search_status != '':
-#         filtered_roles_data = filtered_roles_data[
-#             filtered_roles_data['Status'].str.strip().str.lower() == search_status.strip().lower()
-#             ]
-#     return filtered_roles_data
+def extract_search_parameters(filtered_data):
+    search_bankid = request.args.get('search_bankid')
+    search_groupname = request.args.get('search_groupname')
+    search_status = request.args.get('search_status')
+    if search_bankid:
+        filtered_data = filtered_data[filtered_data['bankid'].astype(str).str.contains(search_bankid.strip())]
+    if search_groupname is not None and search_groupname != '':
+        filtered_data = filtered_data[
+            filtered_data['GroupName'].str.contains(search_groupname.strip(), case=False)]
+    if search_status != None and search_status != '':
+        filtered_data = filtered_data[
+            filtered_data['Status'].str.strip().str.lower() == search_status.strip().lower()
+            ]
+    return filtered_data
 
 @GroupManagement_route.route('/Group_Management_module/GroupManagement', defaults={'subpath': ''}, methods=['GET', 'POST'])
 @GroupManagement_route.route('/Group_Management_module/GroupManagement/<path:subpath>', methods=['GET', 'POST'])
@@ -289,6 +285,7 @@ def toggle_role(group_id):
             upload_by="System"
         )
         return render_template('error.html', userdetails=session.get('userdetails'), error=str(e))
+
 
 
 

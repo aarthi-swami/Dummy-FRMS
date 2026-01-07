@@ -4,7 +4,6 @@ import traceback
 from datetime import datetime
 from flask import Flask, session, request, render_template, redirect, url_for
 from sqlalchemy import text
-
 from app.LogsImport import log_error_to_database, log_event
 from app.FRMDBOperations import get_SQL_engine
 
@@ -12,7 +11,7 @@ app = Flask(__name__)
 
 
 class GroupManagementclass:
-    def __init__(self, GroupName, bankid, created_by, Status='Active', appAction='Pending', reservedfield1=None, appAprrovedby=None):
+    def __init__(self, bankid, GroupName, created_by, Status='Active', appAction='Pending', reservedfield1=None, appAprrovedby=None):
         self.id = str(int(time.time()))
         self.GroupName = GroupName
         self.bankid = bankid
@@ -26,21 +25,21 @@ class GroupManagementclass:
         self.appAprrovedby = appAprrovedby
 
 
-class GroupManager:
-    def __init__(self, user, df, members_df, engine, conn):
+class GroupManagementManager:
+    def __init__(self, user, df, del_df, engine, conn):
         self.user = user
         self.df = df
-        self.members_df = members_df
+        self.deleted_df = del_df
         self.engine = engine
         self.conn = conn
 
-        def _format_sql_value(self, val):
-            if pd.isna(val):
-                return 'NULL'
-            elif isinstance(val, pd.Timestamp):  # Handle Pandas Timestamp
-                return f"'{val.strftime('%Y-%m-%d %H:%M:%S')}'"
-            else:  # Handle all other cases
-                return repr(val)
+    def format_sql_value(self, val):
+        if pd.isna(val):
+            return 'NULL'
+        elif isinstance(val, pd.Timestamp):  # Handle Pandas Timestamp
+            return f"'{val.strftime('%Y-%m-%d %H:%M:%S')}'"
+        else:  # Handle all other cases
+            return val
 
     def _log_error(self, e):
         tb = traceback.extract_tb(e.__traceback__)
@@ -57,94 +56,74 @@ class GroupManager:
         return render_template('error.html', userdetails=session.get('userdetails'), error=str(e))
 
     def save_to_database(self, df, action, userid=None):
-            query = 'SELECT * FROM GroupMaster WITH (NOLOCK);'
-            groupmasterdf = pd.read_sql(query, con=self.engine)
-            # group_map = groupmasterdf.set_index("GroupName").to_dict()["RoleID"]
-            # df["RoleID"] = df["GroupName"].map(group_map)
-            savedf = df.drop(["GroupName", "isid"], axis=1, errors="ignore")
+        query = 'SELECT * FROM GroupMaster WITH (NOLOCK);'
+        groupmasterdf = pd.read_sql(query, con=self.engine)
+        # group_map = groupmasterdf.set_index("GroupName").to_dict()["RoleID"]
+        # df["RoleID"] = df["GroupName"].map(group_map)
+        savedf = df.drop(["GroupName", "isid"], axis=1, errors="ignore")
         # engine = create_engine(config["engine"])
 
-            with get_SQL_engine().connect() as connection:
-                try:
-                    if action == 'insert':
-                        df.to_sql(name='GroupMaster', con=connection, if_exists='append', index=False)
+        with get_SQL_engine().connect() as connection:
+            try:
+                if action == 'insert':
+                    df.to_sql(name='GroupMaster', con=connection, if_exists='append', index=False)
 
-                    elif action == 'update':
-                        for _, row in df.iterrows():
-                            case_id = row['id']
-                            set_clause = ", ".join(
-                                f"{col} = {self._format_sql_value(val)}"
-                                for col, val in row.items() if col != 'id'
-                            )
-                            sql = f"UPDATE GroupMaster SET {set_clause} WHERE id = {repr(case_id)}"
-                            connection.execute(text(sql))
-                    elif action == 'delete':
-                            if isinstance(userid, list):
+                elif action == 'update':
+                    for _, row in df.iterrows():
+                        case_id = row['id']
+                        set_clause = ", ".join(
+                            f"{col} = {self._format_sql_value(val)}"
+                            for col, val in row.items() if col != 'id'
+                        )
+                        sql = f"UPDATE GroupMaster SET {set_clause} WHERE id = {repr(case_id)}"
+                        connection.execute(text(sql))
+                elif action == 'delete':
+                    if isinstance(userid, list):
 
-                                    sql = f"DELETE FROM GroupMaster WHERE id IN ({', '.join([repr(id) for id in userid])}) or appAprrovedBy IN ({', '.join([repr(id) for id in userid])})"
-                            else:
-                                    sql = f"DELETE FROM GroupMaster WHERE id = {repr(userid)}"
-                                    connection.execute(text(sql))
-                                    connection.commit()
+                        sql = f"DELETE FROM GroupMaster WHERE id IN ({', '.join([repr(id) for id in userid])}) or appAprrovedBy IN ({', '.join([repr(id) for id in userid])})"
+                    else:
+                        sql = f"DELETE FROM GroupMaster WHERE id = {repr(userid)}"
+                        connection.execute(text(sql))
+                        connection.commit()
 
-                except Exception as e:
-                    print(f"An error occurred: {e}")  # Handle any errors
-                    connection.rollback()  # Rollback in case of error
-                finally:
-                    connection.close()  # Ensure the connection is closed
+            except Exception as e:
+                print(f"An error occurred: {e}")  # Handle any errors
+                connection.rollback()  # Rollback in case of error
+            finally:
+                connection.close()  # Ensure the connection is closed
 
+    def create_group(self, bankid, group_name, Status, created_by, appAction='Pending', reservedfield1=None):
+        existing_group = self.df[
+            (self.df['bankid'] == bankid) &
+            (self.df['GroupName'] == group_name) &
+            (self.df['Status'] == Status) &
+            (self.df['appAction'] == 'Approved')
+            ]
+        if not existing_group.empty:
+            return "Group already exists"
+        grp1 = GroupManagementclass(bankid, group_name, Status, created_by, appAction, reservedfield1, None)
 
-    def create_group(self, group_name, bankid, Status, created_by, appAction='Pending', reservedfield1=None):
+        group_data = {
+            'id': grp1.id,
+            'GroupName': group_name,
+            'bankid': bankid,
+            'Status': Status,
+            'appAction': grp1.appAction,
+            'created_on': grp1.created_on,
+            'created_by': grp1.created_by,
+            'modified_by': None,
+            'modified_on': None,
+            'reservedfield1': '',
+            'appAprrovedby': None
+        }
 
-        try:
-            existing_group = self.df[
-                (self.df['GroupName'] == group_name) &
-                (self.df['bankid'] == bankid) &
-                (self.df['Status'] == Status) &
-                (self.df['appAction'] == 'Approved')
-                ]
-            if not existing_group.empty:
-                return "Group already exists"
-            grp1 = GroupManagementclass(group_name, bankid, Status, created_by, appAction, reservedfield1, None)
-
-            group_data = {
-                'id': grp1.id,
-                'GroupName': group_name,
-                'bankid': bankid,
-                'Status': Status,
-                'appAction': grp1.appAction,
-                'created_on': grp1.created_on,
-                'created_by': grp1.created_by,
-                'modified_by': None,
-                'modified_on': None,
-                'reservedfield1': None,
-                'appAprrovedby': None
-            }
-
-            userdetails = session.get('userdetails')
-            self.df = pd.concat([self.df, pd.DataFrame([group_data])], ignore_index=True)
-            self.save_to_database(pd.DataFrame([group_data]), 'insert')
-            log_event(f'log_{int(time.time())}', userdetails.get('UserName'),
+        userdetails = session.get('userdetails')
+        self.df = pd.concat([self.df, pd.DataFrame([group_data])], ignore_index=True)
+        self.save_to_database(pd.DataFrame([group_data]), 'insert')
+        log_event(f'log_{int(time.time())}', userdetails.get('UserName'),
                   f'Group created', '/Group_Management_module/GroupManagement',
                   f'user_{grp1.id}', session['bankid'], "Maker", self.conn)
-            return int(grp1.id)
-
-        except Exception as e:
-            tb = traceback.extract_tb(e.__traceback__)
-            line_number = tb[-1].lineno  # Get the line number of the exception
-            file_name = tb[-1].filename  # Get the file name
-            method_name = tb[-1].name
-            log_error_to_database(
-                user_id=session['user1'],
-                machine_ip=request.remote_addr,
-                description=str(e),
-                upload_filename=file_name,  # If applicable
-                line_no=line_number,
-                method_name=method_name,
-                upload_by="System"
-            )
-            return render_template('error.html', userdetails=session.get('userdetails'), error=str(e))
-
+        return int(grp1.id)
 
     def update_group(self, group_id, GroupName=None, Status=None, appstatus=None, modified_by=None):
         try:
@@ -158,8 +137,8 @@ class GroupManager:
                           '/Group_Management_module/GroupManagement',
                           f'user_{group_id}', session['bankid'], "Checker", self.conn)
                 return group_id
-            elif appstatus is 'Approved' and self.df['reservedfield1'] is not None:
 
+            elif appstatus is 'Approved' and self.df['reservedfield1'] is not None:
                 self.df.loc[self.df['id'] == group_id, 'appAction'] = appstatus
                 p_rule = self.df[(self.df['id'] == group_id) & (self.df['appAprrovedby'].notnull())]
                 appApprovedby_value = int(p_rule.iloc[0]['appAprrovedby'])
@@ -177,7 +156,8 @@ class GroupManager:
                     self.save_to_database(self.df.loc[self.df['id'] == group_id], 'update', group_id)
                     self.save_to_database(self.df.loc[self.df['id'] == group_id], 'delete', old_id)
                     log_event(f'log_{int(time.time())}', userdetails.get('UserName'), f'Approved user creation ',
-                              '/Group_Management_module/GroupManagement', f'user_{group_id}', session['bankid'], "Checker", self.conn)
+                              '/Group_Management_module/GroupManagement', f'user_{group_id}', session['bankid'],
+                              "Checker", self.conn)
                 return group_id
             elif appstatus is not None and appstatus is 'Declined':
                 self.df.loc[self.df['id'] == group_id, 'appAction'] = appstatus
@@ -229,8 +209,10 @@ class GroupManager:
                         'modified_by': new_row['modified_by']
                     }
                     self.save_to_database(self.df.loc[self.df['id'] == group_id], 'insert')
-                    log_event(f'log_{int(time.time())}', userdetails.get('UserName'), f'User updated from {old_values} to {new_values}', f'/Group_Management_module/GroupManagement',
-                    f'user_{group_id}', session['bankid'], "Maker", self.conn)
+                    log_event(f'log_{int(time.time())}', userdetails.get('UserName'),
+                              f'User updated from {old_values} to {new_values}',
+                              f'/Group_Management_module/GroupManagement',
+                              f'user_{group_id}', session['bankid'], "Maker", self.conn)
 
                     return group_id
 
@@ -262,7 +244,8 @@ class GroupManager:
                 self.save_to_database(self.df[self.df['id'].isin([group_id, original_id])], 'delete',
                                       [group_id, original_id])
                 log_event(f'log_{int(time.time())}', userdetails.get('UserName'), f'User_deleted',
-                          '/Group_Management_module/GroupManagement', f'role_{group_id}', session['bankid'], "Maker", self.conn)
+                          '/Group_Management_module/GroupManagement', f'role_{group_id}', session['bankid'], "Maker",
+                          self.conn)
             else:
                 old_row = self.df[self.df['id'] == group_id].iloc[0]
                 copyRow = old_row.copy()
@@ -285,7 +268,8 @@ class GroupManager:
                 userdetails = session.get('userdetails')
                 self.save_to_database(self.df[self.df['id'] == new_id], 'insert', new_id)
                 log_event(f'log_{int(time.time())}', userdetails.get('UserName'), f'User deleted',
-                          '/Group_Management_module/GroupManagement', f'group_{group_id}', session['bankid'], "Maker", self.conn)
+                          '/Group_Management_module/GroupManagement', f'group_{group_id}', session['bankid'], "Maker",
+                          self.conn)
 
         except Exception as e:
             tb = traceback.extract_tb(e.__traceback__)
@@ -356,7 +340,6 @@ class GroupManager:
                 upload_by="System"
             )
             return render_template('error.html', userdetails=session.get('userdetails'), error=str(e))
-
 
     def get_groups(self):
         # engine = create_engine(config["engine"])

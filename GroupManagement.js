@@ -18,7 +18,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     approveButton.addEventListener('click', function () {
         setActiveButton(approveButton);
-        window.location.href = '/Group_Management_module/GroupManagement';
+        window.location.href = '/Group_Management_module/GroupManagement/approved';
     });
 
     pendingButton.addEventListener('click', function () {

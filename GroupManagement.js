@@ -89,10 +89,16 @@ document.addEventListener("DOMContentLoaded", function () {
     addGroupBtn.addEventListener("click", function () {
 
         let GroupName = document.querySelector("input[name='new-groupname']").value.trim();
+        let EntityId = document.querySelector("input[name='new-entityid']").value.trim();
         let status = document.querySelector("select[name='new-status']").value;
 
         if (!GroupName) {
             alert("Please enter Group Name");
+            return;
+        }
+
+        if (!EntityId) {
+            alert("Please enter EntityId");
             return;
         }
 
@@ -103,6 +109,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const formData = new FormData();
         formData.append("GroupName", GroupName);
+        formData.append("EntityID", EntityId);
         formData.append("Status", status);
         formData.append("username", "{{ user }}");
 
@@ -133,20 +140,26 @@ document.addEventListener("DOMContentLoaded", function () {
             const row = button.closest("tr");
 
             const groupNameValue = row.querySelector(".GroupName-value");
+            const EntityIDValue = row.querySelector(".EntityID-value");
             const statusValue = row.querySelector(".Status-value");
 
             const groupNameEdit = row.querySelector(".groupname-edit");
+            const EntityIDEdit = row.querySelector(".entityid-edit");
             const statusEdit = row.querySelector(".status-edit");
             const updateBtn = row.querySelector(".update-btn");
 
             groupNameEdit.value = groupNameValue.textContent.trim();
+            EntityIDEdit.value = EntityIDValue.textContent.trim();
             statusEdit.value = statusValue.textContent;
 
             groupNameValue.style.display = "none";
+            EntityIDValue.style.display = "none";
             statusValue.style.display = "none";
             button.style.display = "none";
 
             groupNameEdit.style.display = "block";
+//            EntityIDEdit.style.display = "block";
+//            EntityIDEdit.setAttribute("readonly", true);
             statusEdit.style.display = "block";
             updateBtn.style.display = "inline-block";
         });
@@ -164,10 +177,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
                 const row = button.closest("tr");
                 const groupNameEdit = row.querySelector(".groupname-edit");
+                const EntityIDEdit = row.querySelector(".entityid-edit");
                 const statusEdit = row.querySelector(".status-edit");
 
                 const formData = new FormData();
                 formData.append("GroupName", groupNameEdit.value);
+                formData.append("EntityID", EntityIDEdit.value);
                 formData.append("Status", statusEdit.value);
                 formData.append("username", "{{ user }}");
 
@@ -192,7 +207,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const objid = getQueryParam('objid');
     if (objid) {
-        const row = document.getElementById(`role-${objid}`);
+        const row = document.getElementById(`Group-${objid}`);
         if (row) {
             row.classList.add('blink-row');
             const tbody = row.closest('tbody');

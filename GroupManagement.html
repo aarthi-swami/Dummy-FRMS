@@ -82,12 +82,13 @@
 
                     {% if userdetails.Role == 'Maker' or userdetails.Role == 'Admin' %}
                     <button id="add-group-button" class="btn btn-primary mb-3">+Add Details</button>
-                    {%else%}
-                    <button style="display:None;" id="add-group-button" class="btn btn-primary mb-3">+Add Details</button>
-                    {% endif %}
+<!--                    {%else%}-->
+<!--                    <button style="display:None;" id="add-group-button" class="btn btn-primary mb-3">+Add Details</button>-->
+<!--                    {% endif %}-->
                     <div class="btn-group" style="display: flex; gap: 0.8vw; ">
                         <div style="display: flex; justify-content: flex-end; padding: 10px;">
-                  <div style="position: relative; width: 200px;margin-top: 0.4vw;">
+                  <div style="position: relative; w
+                  idth: 200px;margin-top: 0.4vw;">
                         <input type="text" id="search-input" placeholder="Search" class="form-control" style="width: 100%; padding-left: 30px;">
                         <i class="fa fa-search" style="position: absolute; top: 50%; left: 10px; transform: translateY(-50%); color: gray;"></i>
                  </div>
@@ -111,6 +112,7 @@
                         <th>ID</th>
                         <th style="max-width:8vw; display:none;">Bank</th>
                         <th>Group Name</th>
+                        <th>EntityID</th>
                         <th style="max-width:6vw;">Status</th>
                         {% if userdetails.Role in ['Admin', 'Maker'] %}
                              <th>Action</th>
@@ -146,6 +148,9 @@
                     <input type="text" class="form-control" name="new-groupname" id="groupname" placeholder="Enter Group Name" maxlength="90"  oninput="this.value = this.value.replace(/[^a-zA-Z0-9]/g, '')" required>
                     </td>
 
+
+				    <td style="width:18vw;"><input type="text" class="form-control" name="new-entityid" id="entityid" placeholder="Enter Entity ID" maxlength="25" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'')" required></td>
+
                         <td style="max-width:6vw;">
                             <select class="form-control" name="new-status" id="statusSelect" required>
                                 <option value="Active">Active</option>
@@ -161,7 +166,7 @@
                                     </td>
                                  {%endif%}
                     </tr>
-                            {% for group in Groups %}
+                            {% for group in groups  %}
                                 <tr class="frow" id="Group-{{ group.id }}">
                                     <td>{{ loop.index }}</td>
                                     {% if userdetails.Role == 'Admin'%}
@@ -170,7 +175,9 @@
                                     <td style="max-width:8vw;display:none;"><span class="bank-value">{{ bank_dict[group.bankid] if group.bankid in bank_dict else '' }}</span></td>
                                     {%endif%}
 
-                                    <td><span class="GroupName-value">{{ group.GroupName }}</span><input type="text" oninput="this.value = this.value.replace(/[^a-zA-Z0-9_.]/g, '')" class="form-control groupname-edit" style="display: none;" id="groupnameeditInput-{{ group.id }}"></td>
+                                    <td><span class="GroupName-value">{{ group.GroupName }}</span> <input type="text" oninput="this.value = this.value.replace(/[^a-zA-Z0-9_.]/g, '')" class="form-control groupname-edit" style="display: none;" id="groupnameeditInput-{{ group.id }}"></td>
+
+                                    <td><span class="EntityID-value">{{ group.EntityID }}</span> <input type="text" oninput="this.value = this.value.replace(/[^a-zA-Z0-9]/g, '')" class="form-control entityid-edit" style="display: none;" id="entityideditInput-{{ group.id }}"></td>
 
 
                                     <td style="max-width:6vw;"><span class="Status-value">{{ group.Status }}</span>
@@ -314,8 +321,8 @@
     </div>
 </div>
 </div>
-<!--<script src="{{ url_for('static', filename='/vendor/GroupManagement.js') }}"></script>-->
-<script src="{{ url_for('static', filename='vendor/GroupManagement.js') }}"></script>
+
+<script src="{{ url_for('static',filename='/vendor/GroupManagement.js') }}"></script>
 
 <script>
     var queryString = window.location.search;
@@ -330,4 +337,3 @@
     }
 </script>
 {% endblock %}
-

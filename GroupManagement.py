@@ -1,351 +1,207 @@
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
-import time
-import traceback
-from datetime import datetime
-from flask import Flask, session, request, render_template, redirect, url_for
-from sqlalchemy import text
-from app.LogsImport import log_error_to_database, log_event
-from app.FRMDBOperations import get_SQL_engine
+import numpy as np
+import io
+import json
+import os
 
-app = Flask(__name__)
+app = FastAPI(title="MAXIMUS - Excel Visualizer")
 
+# Allow frontend to talk to backend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-class GroupManagementclass:
-    def __init__(self, bankid, GroupName, created_by, Status='Active', appAction='Pending', reservedfield1=None, appAprrovedby=None):
-        self.id = str(int(time.time()))
-        self.GroupName = GroupName
-        self.bankid = bankid
-        self.Status = Status
-        self.appAction = appAction
-        self.created_on = datetime.now()
-        self.created_by = created_by
-        self.modified_on = None
-        self.modified_by = None
-        self.reservedfield1 = reservedfield1
-        self.appAprrovedby = appAprrovedby
+# Serve frontend HTML
+@app.get("/", response_class=HTMLResponse)
+async def serve_frontend():
+    with open("templates/index.html", "r", encoding="utf-8") as f:
+        return f.read()
 
 
-class GroupManagementManager:
-    def __init__(self, user, df, del_df, engine, conn):
-        self.user = user
-        self.df = df
-        self.deleted_df = del_df
-        self.engine = engine
-        self.conn = conn
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...)):
+    """
+    Accepts .xlsx, .xls, .csv files
+    Returns: sheets, headers, rows, stats, chart data
+    """
+    filename = file.filename.lower()
+    contents = await file.read()
 
-    def format_sql_value(self, val):
-        if pd.isna(val):
-            return 'NULL'
-        elif isinstance(val, pd.Timestamp):  # Handle Pandas Timestamp
-            return f"'{val.strftime('%Y-%m-%d %H:%M:%S')}'"
-        else:  # Handle all other cases
-            return val
+    try:
+        # ── Read file based on extension ──────────────────────────────────
+        if filename.endswith(".csv"):
+            df_dict = {"Sheet1": pd.read_csv(io.BytesIO(contents))}
 
-    def _log_error(self, e):
-        tb = traceback.extract_tb(e.__traceback__)
-        log_error_to_database(
-            user_id=session.get('user1'),
-            machine_ip=request.remote_addr,
-            description=str(e),
-            upload_filename=tb[-1].filename,
-            line_no=tb[-1].lineno,
-            method_name=tb[-1].name,
-            upload_by="System"
-        )
 
-        return render_template('error.html', userdetails=session.get('userdetails'), error=str(e))
+        elif filename.endswith(".xlsx") or filename.endswith(".xls"):
+            xls = None
+            for engine in ["openpyxl", "xlrd"]:
+                try:
+                    xls = pd.ExcelFile(io.BytesIO(contents), engine=engine)
+                    break
+                except Exception:
+                    continue
+            if xls is None:
+                raise HTTPException(status_code=400, detail="Could not read Excel file.")
+            df_dict = {
+                sheet: xls.parse(sheet)
+                for sheet in xls.sheet_names
+            }
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file format. Use .xlsx, .xls or .csv")
 
-    def save_to_database(self, df, action, userid=None):
-        query = 'SELECT * FROM GroupMaster WITH (NOLOCK);'
-        groupmasterdf = pd.read_sql(query, con=self.engine)
-        # group_map = groupmasterdf.set_index("GroupName").to_dict()["RoleID"]
-        # df["RoleID"] = df["GroupName"].map(group_map)
-        savedf = df.drop(["GroupName", "isid"], axis=1, errors="ignore")
-        # engine = create_engine(config["engine"])
-
-        with get_SQL_engine().connect() as connection:
-            try:
-                if action == 'insert':
-                    df.to_sql(name='GroupMaster', con=connection, if_exists='append', index=False)
-
-                elif action == 'update':
-                    for _, row in df.iterrows():
-                        case_id = row['id']
-                        set_clause = ", ".join(
-                            f"{col} = {self._format_sql_value(val)}"
-                            for col, val in row.items() if col != 'id'
-                        )
-                        sql = f"UPDATE GroupMaster SET {set_clause} WHERE id = {repr(case_id)}"
-                        connection.execute(text(sql))
-                elif action == 'delete':
-                    if isinstance(userid, list):
-
-                        sql = f"DELETE FROM GroupMaster WHERE id IN ({', '.join([repr(id) for id in userid])}) or appAprrovedBy IN ({', '.join([repr(id) for id in userid])})"
-                    else:
-                        sql = f"DELETE FROM GroupMaster WHERE id = {repr(userid)}"
-                        connection.execute(text(sql))
-                        connection.commit()
-
-            except Exception as e:
-                print(f"An error occurred: {e}")  # Handle any errors
-                connection.rollback()  # Rollback in case of error
-            finally:
-                connection.close()  # Ensure the connection is closed
-
-    def create_group(self, bankid, group_name, Status, created_by, appAction='Pending', reservedfield1=None):
-        existing_group = self.df[
-            (self.df['bankid'] == bankid) &
-            (self.df['GroupName'] == group_name) &
-            (self.df['Status'] == Status) &
-            (self.df['appAction'] == 'Approved')
-            ]
-        if not existing_group.empty:
-            return "Group already exists"
-        grp1 = GroupManagementclass(bankid, group_name, Status, created_by, appAction, reservedfield1, None)
-
-        group_data = {
-            'id': grp1.id,
-            'GroupName': group_name,
-            'bankid': bankid,
-            'Status': Status,
-            'appAction': grp1.appAction,
-            'created_on': grp1.created_on,
-            'created_by': grp1.created_by,
-            'modified_by': None,
-            'modified_on': None,
-            'reservedfield1': '',
-            'appAprrovedby': None
+        # ── Process each sheet ────────────────────────────────────────────
+        result = {
+            "filename": file.filename,
+            "sheets": []
         }
 
-        userdetails = session.get('userdetails')
-        self.df = pd.concat([self.df, pd.DataFrame([group_data])], ignore_index=True)
-        self.save_to_database(pd.DataFrame([group_data]), 'insert')
-        log_event(f'log_{int(time.time())}', userdetails.get('UserName'),
-                  f'Group created', '/Group_Management_module/GroupManagement',
-                  f'user_{grp1.id}', session['bankid'], "Maker", self.conn)
-        return int(grp1.id)
+        for sheet_name, df in df_dict.items():
+            # Clean up
+            df = df.dropna(how="all").reset_index(drop=True)
+            df.columns = [str(c).strip() for c in df.columns]
 
-    def update_group(self, group_id, GroupName=None, Status=None, appstatus=None, modified_by=None):
-        try:
-            userdetails = session.get('userdetails')
-            group_id = str(group_id)
-            if appstatus is not None and appstatus == 'Approved' and self.df.loc[
-                self.df['id'] == group_id, 'reservedfield1'].isnull().all():
-                self.df.loc[self.df['id'] == group_id, 'appAction'] = appstatus
-                self.save_to_database(self.df[self.df['id'] == group_id], 'update', group_id)
-                log_event(f'log_{int(time.time())}', userdetails.get('UserName'), f'Approved user update',
-                          '/Group_Management_module/GroupManagement',
-                          f'user_{group_id}', session['bankid'], "Checker", self.conn)
-                return group_id
+            # Replace NaN with None for JSON serialization
+            df = df.where(pd.notnull(df), None)
 
-            elif appstatus is 'Approved' and self.df['reservedfield1'] is not None:
-                self.df.loc[self.df['id'] == group_id, 'appAction'] = appstatus
-                p_rule = self.df[(self.df['id'] == group_id) & (self.df['appAprrovedby'].notnull())]
-                appApprovedby_value = int(p_rule.iloc[0]['appAprrovedby'])
-                if appApprovedby_value:
-                    p_rule = self.df[self.df['id'] == group_id]
-                    p_rule = self.df[self.df['id'] == group_id].drop(columns=['id'])
+            headers = list(df.columns)
+            rows    = df.head(500).values.tolist()  # max 500 rows for table
 
-                    # Update all columns except `Id` for rows where `Id` matches `appApprovedby_value`
-                    self.df.loc[self.df['id'] == int(appApprovedby_value), p_rule.columns] = p_rule.values
-                    self.df = self.df[~self.df['id'].isin([int(group_id)])]
-                    self.df.loc[self.df['id'] == group_id, 'appAprrovedby'] = ''
-                    self.df.loc[self.df['id'] == group_id, 'id'] = int(appApprovedby_value)
-                    old_id = group_id
-                    role_id = int(appApprovedby_value)
-                    self.save_to_database(self.df.loc[self.df['id'] == group_id], 'update', group_id)
-                    self.save_to_database(self.df.loc[self.df['id'] == group_id], 'delete', old_id)
-                    log_event(f'log_{int(time.time())}', userdetails.get('UserName'), f'Approved user creation ',
-                              '/Group_Management_module/GroupManagement', f'user_{group_id}', session['bankid'],
-                              "Checker", self.conn)
-                return group_id
-            elif appstatus is not None and appstatus is 'Declined':
-                self.df.loc[self.df['id'] == group_id, 'appAction'] = appstatus
-                self.save_to_database(self.df.loc[self.df['id'] == group_id], 'update', group_id)
-                log_event(f'log_{int(time.time())}', userdetails.get('UserName'), f'Declined user update ',
-                          '/Group_Management_module/GroupManagement',
-                          f'user_{group_id}', session['bankid'], "Checker", self.conn)
-                return group_id
+            # ── Stats ─────────────────────────────────────────────────────
+            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+            stats = {
+                "total_rows":    len(df),
+                "total_cols":    len(headers),
+                "numeric_cols":  len(numeric_cols),
+                "missing_vals":  int(df.isnull().sum().sum()),
+            }
+
+            # ── Numeric column stats (for summary cards) ──────────────────
+            col_stats = {}
+            for col in numeric_cols:
+                s = df[col].dropna()
+                if len(s) == 0:
+                    continue
+                col_stats[col] = {
+                    "mean":   round(float(s.mean()), 2),
+                    "min":    round(float(s.min()),  2),
+                    "max":    round(float(s.max()),  2),
+                    "sum":    round(float(s.sum()),  2),
+                    "median": round(float(s.median()), 2),
+                    "std":    round(float(s.std()),  2),
+                }
+
+            # ── Chart data ────────────────────────────────────────────────
+            chart_data = {}
+
+            # Bar / Line chart — first text col as labels, all numeric as datasets
+            # Bar / Line chart — smart label detection (skip date columns)
+            def is_date_col(series):
+                try:
+                    converted = pd.to_datetime(series.dropna().head(10), infer_datetime_format=True)
+                    return True
+                except:
+                    return False
+
+            label_col = None
+            # First preference: non-numeric, non-date column (like CHANNEL, REGION etc.)
+            for col in headers:
+                if col not in numeric_cols:
+                    if not is_date_col(df[col]):
+                        label_col = col
+                        break
+            # Second preference: if no text col found, use date col
+            if label_col is None:
+                for col in headers:
+                    if col not in numeric_cols:
+                        label_col = col
+                        break
+
+            if label_col:
+                labels = df[label_col].astype(str).head(50).tolist()
             else:
-                # self.df.loc[self.df['id'] == group_id, 'appAction'] = 'Pending'
-                if group_id in self.df['id'].values:
-                    old_row = self.df[self.df['id'] == group_id].iloc[0]
-                    copyRow = old_row.copy()
-                    copyRow['id'] = int(time.time())  # Set new group_id as the current length of the DataFrame + 1
-                    copyRow['appAprrovedby'] = int(group_id)
-                    copyRow['appAction'] = 'Pending'
-                    # old_row = self.df[self.df['id'] == group_id].iloc[0]
-                    self.df.loc[len(self.df)] = copyRow
-                    group_id = copyRow['id']
-                    # self.save_to_database(self.df)
-                    old_values = {
-                        'group_id': old_row['GroupId'],
-                        'group_name': old_row['GroupName'],
-                        'status': old_row['Status'],
-                        'appstatus': old_row['Appstatus'],
-                        'modified_by': old_row['modified_by']
-                    }
-                    if group_id:
-                        self.df.loc[self.df['id'] == group_id, 'GroupId'] = group_id
-                    if GroupName:
-                        self.df.loc[self.df['id'] == group_id, 'GroupName'] = GroupName
-                    if Status:
-                        self.df.loc[self.df['id'] == group_id, 'Status'] = Status
-                    if appstatus:
-                        self.df.loc[self.df['id'] == group_id, 'appstatus'] = appstatus
-                    if modified_by:
-                        self.df.loc[self.df['id'] == group_id, 'modified_by'] = modified_by
+                labels = [str(i+1) for i in range(min(50, len(df)))]
 
-                    self.df.loc[self.df['id'] == group_id, 'reservedfield1'] = str(old_values)
+            datasets = []
+            colors   = ["#6c63ff","#ff6584","#43e97b","#f7971e",
+                        "#4facfe","#f093fb","#fa709a","#fee140","#30cfd0"]
+            for i, col in enumerate(numeric_cols[:6]):
+                datasets.append({
+                    "label": col,
+                    "data":  df[col].head(50).fillna(0).round(2).tolist(),
+                    "color": colors[i % len(colors)]
+                })
 
-                    userdetails = session.get('userdetails')
+            chart_data["main"] = {"labels": labels, "datasets": datasets}
 
-                    new_row = self.df[self.df['id'] == group_id].iloc[0]
-                    new_values = {
-                        'group_id': new_row['GroupId'],
-                        'group_name': new_row['GroupName'],
-                        'status': new_row['Status'],
-                        'appstatus': new_row['Appstatus'],
-                        'modified_by': new_row['modified_by']
-                    }
-                    self.save_to_database(self.df.loc[self.df['id'] == group_id], 'insert')
-                    log_event(f'log_{int(time.time())}', userdetails.get('UserName'),
-                              f'User updated from {old_values} to {new_values}',
-                              f'/Group_Management_module/GroupManagement',
-                              f'user_{group_id}', session['bankid'], "Maker", self.conn)
+            # Pie / Doughnut — distribution of first text column categories
+            # Pie / Doughnut — skip date columns, pick meaningful category col
+            cat_cols = [c for c in headers if c not in numeric_cols]
+            cat_col = None
+            for col in cat_cols:
+                if not is_date_col(df[col]):
+                    unique_count = df[col].nunique()
+                    if 2 <= unique_count <= 30:  # meaningful category (not too many unique values)
+                        cat_col = col
+                        break
+            if cat_col is None and cat_cols:
+                cat_col = cat_cols[0]  # fallback to first col
 
-                    return group_id
+            if cat_col:
+                # Remove total/summary rows
+                filtered = df[cat_col].astype(str)
+                filtered = filtered[~filtered.str.lower().isin(['total', 'grand total', 'subtotal', 'sum', 'overall'])]
+                vc = filtered.value_counts().head(10)
+                chart_data["pie"] = {
+                    "labels": vc.index.astype(str).tolist(),
+                    "data":   vc.values.tolist(),
+                    "colors": colors[:len(vc)]
+                }
 
-        except Exception as e:
-            tb = traceback.extract_tb(e.__traceback__)
-            line_number = tb[-1].lineno  # Get the line number of the exception
-            file_name = tb[-1].filename  # Get the file name
-            method_name = tb[-1].name
-            log_error_to_database(
-                user_id=session['user1'],
-                machine_ip=request.remote_addr,
-                description=str(e),
-                upload_filename=file_name,  # If applicable
-                line_no=line_number,
-                method_name=method_name,
-                upload_by="System"
-            )
-        return render_template('error.html', userdetails=session.get('userdetails'), error=str(e))
+            # Distribution histogram — first numeric column
+            if numeric_cols:
+                col  = numeric_cols[0]
+                vals = df[col].dropna()
+                counts, bin_edges = np.histogram(vals, bins=10)
+                chart_data["histogram"] = {
+                    "labels": [f"{round(b, 1)}" for b in bin_edges[:-1]],
+                    "data":   counts.tolist(),
+                    "col":    col
+                }
 
-    def delete_group(self, group_id, username, appstatus=None, case=None):
-        try:
-            group_id = str(group_id)
+            # Column averages
+            if numeric_cols:
+                chart_data["averages"] = {
+                    "labels": numeric_cols[:8],
+                    "data":   [round(float(df[c].mean()), 2) for c in numeric_cols[:8]]
+                }
 
-            if appstatus == 'Approved':
-                copy_row = self.df[self.df['id'] == group_id]
-                original_id = copy_row['appAprrovedby'].values[0]
-                self.df = self.df[~self.df['id'].isin([group_id, original_id])]
-                userdetails = session.get('userdetails')
-                self.save_to_database(self.df[self.df['id'].isin([group_id, original_id])], 'delete',
-                                      [group_id, original_id])
-                log_event(f'log_{int(time.time())}', userdetails.get('UserName'), f'User_deleted',
-                          '/Group_Management_module/GroupManagement', f'role_{group_id}', session['bankid'], "Maker",
-                          self.conn)
-            else:
-                old_row = self.df[self.df['id'] == group_id].iloc[0]
-                copyRow = old_row.copy()
-                copyRow['id'] = int(time.time())
-                copyRow['appAprrovedby'] = group_id
-                copyRow['appAction'] = 'Pending'
-                self.df.loc[len(self.df)] = copyRow
-                new_id = copyRow['id']
+            result["sheets"].append({
+                "name":      sheet_name,
+                "headers":   headers,
+                "rows":      rows,
+                "stats":     stats,
+                "col_stats": col_stats,
+                "chart_data": chart_data,
+                "numeric_cols": numeric_cols,
+                "label_col":    label_col,
+            })
 
-            if group_id in self.df['id'].values:
-                self.df.loc[self.df['id'] == new_id, 'appAprrovedby'] = group_id
-                self.df.loc[self.df['id'] == new_id, 'reservedfield1'] = 'delete'
+        return result
 
-                role = self.df[self.df['id'] == group_id]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
 
-                if role['UserName'].values[0] == username:
-                    self.df = self.df[self.df['id'] != group_id]
-                    return 'redirect_login'
 
-                userdetails = session.get('userdetails')
-                self.save_to_database(self.df[self.df['id'] == new_id], 'insert', new_id)
-                log_event(f'log_{int(time.time())}', userdetails.get('UserName'), f'User deleted',
-                          '/Group_Management_module/GroupManagement', f'group_{group_id}', session['bankid'], "Maker",
-                          self.conn)
-
-        except Exception as e:
-            tb = traceback.extract_tb(e.__traceback__)
-            line_number = tb[-1].lineno
-            file_name = tb[-1].filename
-            method_name = tb[-1].name
-            log_error_to_database(
-                user_id=session['user1'],
-                machine_ip=request.remote_addr,
-                description=str(e),
-                upload_filename=file_name,
-                line_no=line_number,
-                method_name=method_name,
-                upload_by="System"
-            )
-        return render_template('error.html', userdetails=session.get('userdetails'), error=str(e))
-
-    def toggle_group_status(self, group_id, appstatus=None):
-        try:
-            group_id = str(group_id)
-            copy_row = self.df[self.df['id'] == group_id]
-
-            if not copy_row.empty:
-                original_id = copy_row['appAprrovedby'].values[0]
-                current_status = self.df.loc[self.df['id'] == original_id, 'Status'].iloc[0]
-                new_status = 'Active' if current_status == 'Inactive' else 'Inactive'
-                self.df.loc[self.df['id'] == original_id, 'Status'] = new_status
-                self.save_to_database(self.df.loc[self.df['id'] == original_id], 'update', original_id)
-                self.save_to_database(copy_row, 'delete', group_id)
-                self.df = self.df[~self.df['id'].isin([int(group_id)])]
-            else:
-                old_row = self.df[self.df['id'] == group_id].iloc[0]
-                copy_row = old_row.copy()
-                copy_row['id'] = int(time.time())
-                copy_row['appAprrovedby'] = group_id
-                copy_row['appAction'] = 'Pending'
-                self.df.loc[len(self.df)] = copy_row
-                new_id = copy_row['id']
-                if group_id in self.df['id'].values:
-                    self.df.loc[self.df['id'] == new_id, 'appAprrovedby'] = group_id
-                    self.df.loc[self.df['id'] == new_id, 'reservedfield1'] = 'toggle'
-                    current_status = self.df.loc[self.df['id'] == group_id, 'Status'].iloc[0]
-                    new_status = 'Active' if current_status == 'Inactive' else 'Inactive'
-                    self.df.loc[self.df['id'] == new_id, 'Status'] = new_status
-
-                    userdetails = session.get('userdetails')
-
-                    self.save_to_database(self.df[self.df['id'] == new_id], 'insert', new_id)
-
-                    log_event(f'log_{int(time.time())}', userdetails.get('UserName'),
-                              f'Sent request to change status from {current_status} to {new_status}',
-                              '/Group_Management_module/GroupManagement',
-                              f'role_{group_id}', session['bankid'], "Maker", self.conn)
-
-            return 'Enabled'
-        except Exception as e:
-            tb = traceback.extract_tb(e.__traceback__)
-            line_number = tb[-1].lineno  # Get the line number of the exception
-            file_name = tb[-1].filename  # Get the file name
-            method_name = tb[-1].name
-            log_error_to_database(
-                user_id=session['user1'],
-                machine_ip=request.remote_addr,
-                description=str(e),
-                upload_filename=file_name,  # If applicable
-                line_no=line_number,
-                method_name=method_name,
-                upload_by="System"
-            )
-            return render_template('error.html', userdetails=session.get('userdetails'), error=str(e))
-
-    def get_groups(self):
-        # engine = create_engine(config["engine"])
-        userdetails = session.get('userdetails')
-        # Connect to the database
-        query = f"SELECT * FROM GroupMaster WHERE bankid = '{userdetails['bankid']}'"
-        with get_SQL_engine().connect() as connection:
-            self.df = pd.read_sql(query, con=connection)
-        return self.df
+@app.get("/health")
+async def health():
+    return {"status": "ok", "message": "MAXIMUS API is running"}

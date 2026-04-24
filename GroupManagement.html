@@ -1,339 +1,582 @@
-{% extends "base.html" %}
-{% block title %}Group Management{% endblock %}
-{% block content %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MAXIMUS — Data Visualizer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+:root {
+  --bg:#f0f2f8;--surface:#fff;--card:#fff;--sidebar:#1a1f2e;
+  --border:#e2e5ef;--accent:#2563eb;--accent2:#7c3aed;--accent3:#059669;
+  --accent4:#d97706;--accent5:#dc2626;--text:#0f172a;--muted:#64748b;--muted2:#94a3b8;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;min-height:100vh;display:flex;}
 
-<div class="Pagecontent">
-<div id="Pagebox" class="content box">
-    <div style="margin-top:15px;display:flex;justify-content:center;">
-        <h1 class="pageheader">Group Management</h1>
+/* SIDEBAR */
+.sidebar{width:220px;min-height:100vh;background:var(--sidebar);display:flex;flex-direction:column;flex-shrink:0;position:fixed;left:0;top:0;bottom:0;z-index:100;}
+.sidebar-logo{padding:24px 20px 20px;border-bottom:1px solid rgba(255,255,255,0.08);}
+.logo-title{font-size:18px;font-weight:700;color:#fff;letter-spacing:1px;}
+.logo-title span{color:#60a5fa;}
+.logo-sub{font-size:9px;color:rgba(255,255,255,0.3);letter-spacing:2px;margin-top:3px;text-transform:uppercase;}
+.sidebar-nav{padding:16px 12px;flex:1;}
+.nav-label{font-size:9px;color:rgba(255,255,255,0.25);letter-spacing:2px;text-transform:uppercase;padding:0 8px;margin-bottom:8px;margin-top:16px;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;color:rgba(255,255,255,0.5);font-size:12px;font-weight:500;margin-bottom:2px;}
+.nav-item.active{background:rgba(37,99,235,0.25);color:#60a5fa;}
+.nav-icon{font-size:14px;width:18px;text-align:center;}
+.sheet-nav-item{display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:6px;cursor:pointer;color:rgba(255,255,255,0.4);font-size:11px;transition:all 0.2s;margin-bottom:2px;}
+.sheet-nav-item:hover{background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.7);}
+.sheet-nav-item.active{background:rgba(124,58,237,0.25);color:#a78bfa;}
+.sheet-dot{width:6px;height:6px;border-radius:50%;background:var(--accent2);flex-shrink:0;}
+.sidebar-sheets{padding:0 12px 12px;}
+.sidebar-bottom{padding:16px 20px;border-top:1px solid rgba(255,255,255,0.08);font-size:10px;color:rgba(255,255,255,0.25);}
+.status-row{display:flex;align-items:center;gap:6px;}
+.status-dot{width:6px;height:6px;border-radius:50%;background:#10b981;animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+
+/* MAIN */
+.main{margin-left:220px;flex:1;min-height:100vh;display:flex;flex-direction:column;}
+
+/* TOPBAR */
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 28px;height:56px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:50;}
+.topbar-title{font-size:14px;font-weight:600;}
+.topbar-sub{font-size:11px;color:var(--muted2);}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.file-chip{display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 12px;font-size:11px;color:var(--muted);}
+.file-chip strong{color:var(--text);}
+.btn-upload{background:var(--accent);color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;}
+.btn-upload:hover{background:#1d4ed8;}
+
+/* CONTENT */
+.content{padding:24px 28px;flex:1;}
+
+/* UPLOAD */
+#upload-screen{display:flex;align-items:center;justify-content:center;min-height:calc(100vh - 56px);}
+.upload-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:60px 80px;text-align:center;max-width:520px;width:100%;}
+.upload-card-icon{font-size:52px;margin-bottom:20px;}
+.upload-card-title{font-size:22px;font-weight:700;margin-bottom:8px;}
+.upload-card-sub{color:var(--muted);font-size:13px;margin-bottom:28px;line-height:1.6;}
+.drop-zone{border:2px dashed var(--border);border-radius:12px;padding:32px;margin-bottom:20px;cursor:pointer;transition:all 0.2s;}
+.drop-zone:hover,.drop-zone.drag{border-color:var(--accent);background:rgba(37,99,235,0.04);}
+.drop-zone p{font-size:12px;color:var(--muted2);margin-top:8px;}
+.btn-primary{background:var(--accent);color:#fff;border:none;padding:12px 32px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:'IBM Plex Sans',sans-serif;}
+.btn-primary:hover{background:#1d4ed8;}
+.fmt-row{display:flex;justify-content:center;gap:8px;margin-top:16px;}
+.fmt-badge{padding:4px 12px;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:1px;border:1px solid var(--border);color:var(--muted);}
+#file-input{display:none;}
+.err-box{background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 16px;color:#dc2626;font-size:12px;margin-top:16px;display:none;}
+
+/* LOADING */
+#loading-screen{display:none;align-items:center;justify-content:center;min-height:calc(100vh - 56px);}
+.pbi-loader{display:flex;gap:6px;justify-content:center;margin-bottom:24px;}
+.pbi-bar{width:4px;height:32px;border-radius:2px;background:var(--accent);animation:pbibar 1s infinite ease-in-out;}
+.pbi-bar:nth-child(2){animation-delay:0.1s;background:var(--accent2);}
+.pbi-bar:nth-child(3){animation-delay:0.2s;background:var(--accent3);}
+.pbi-bar:nth-child(4){animation-delay:0.3s;background:var(--accent4);}
+.pbi-bar:nth-child(5){animation-delay:0.4s;background:var(--accent5);}
+@keyframes pbibar{0%,100%{transform:scaleY(0.4);opacity:0.5}50%{transform:scaleY(1);opacity:1}}
+.loading-title{font-size:16px;font-weight:600;margin-bottom:6px;}
+.loading-sub{font-size:12px;color:var(--muted);}
+
+/* DASHBOARD */
+#dashboard{display:none;}
+
+/* KPI */
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px;}
+.kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px 20px;position:relative;overflow:hidden;transition:box-shadow 0.2s;}
+.kpi-card:hover{box-shadow:0 4px 20px rgba(0,0,0,0.08);}
+.kpi-card::after{content:'';position:absolute;bottom:0;left:0;right:0;height:3px;}
+.kpi-card.k1::after{background:var(--accent);}
+.kpi-card.k2::after{background:var(--accent2);}
+.kpi-card.k3::after{background:var(--accent3);}
+.kpi-card.k4::after{background:var(--accent4);}
+.kpi-label{font-size:10px;font-weight:600;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;}
+.kpi-value{font-size:28px;font-weight:700;line-height:1;margin-bottom:4px;}
+.kpi-value.k1{color:var(--accent);}
+.kpi-value.k2{color:var(--accent2);}
+.kpi-value.k3{color:var(--accent3);}
+.kpi-value.k4{color:var(--accent4);}
+.kpi-sub{font-size:11px;color:var(--muted2);}
+
+/* FILTER BAR */
+.filter-bar{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 20px;margin-bottom:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+.filter-label{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:0.5px;text-transform:uppercase;}
+.filter-select{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 12px;border-radius:6px;font-family:'IBM Plex Sans',sans-serif;font-size:12px;cursor:pointer;outline:none;min-width:140px;}
+.filter-select:focus{border-color:var(--accent);}
+.ct-pills{display:flex;gap:4px;}
+.ct-pill{padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--muted);cursor:pointer;font-size:11px;font-weight:600;transition:all 0.2s;font-family:'IBM Plex Sans',sans-serif;}
+.ct-pill.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+.filter-right{margin-left:auto;}
+.search-wrap{position:relative;}
+.search-wrap::before{content:'🔍';position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:11px;}
+.search-input{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 12px 7px 28px;border-radius:6px;font-size:12px;font-family:'IBM Plex Sans',sans-serif;outline:none;width:180px;}
+.search-input:focus{border-color:var(--accent);}
+
+/* CHARTS */
+/* Row 1: Main chart (full width) */
+.charts-row1{margin-bottom:16px;}
+/* Row 2: Bar chart LEFT (bigger) + Pie chart RIGHT (smaller) */
+.charts-row2{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px;}
+/* Row 3: Column Averages full width */
+.charts-row3{margin-bottom:16px;}
+
+.chart-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;}
+.chart-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;}
+.chart-title{font-size:12px;font-weight:600;color:var(--text);}
+.chart-subtitle{font-size:10px;color:var(--text);margin-top:2px;font-weight:700;}
+.chart-badge{padding:3px 8px;border-radius:4px;font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;}
+.badge-main{background:rgba(37,99,235,0.1);color:var(--accent);}
+.badge-pie{background:rgba(5,150,105,0.1);color:var(--accent3);}
+.badge-avg{background:rgba(217,119,6,0.1);color:var(--accent4);}
+.chart-wrap{position:relative;height:280px;}
+.chart-wrap.short{height:240px;}
+.chart-wrap.tall{height:320px;}
+
+/* COL STATS */
+.col-stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:16px;}
+.col-stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;}
+.col-stat-name{font-size:11px;font-weight:700;color:var(--text);margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-bottom:8px;border-bottom:1px solid var(--border);}
+.col-stat-r{display:flex;justify-content:space-between;font-size:10px;margin-bottom:4px;}
+.col-stat-r span:first-child{color:var(--muted);}
+.col-stat-r span:last-child{color:var(--text);font-weight:600;font-family:'IBM Plex Mono',monospace;}
+
+/* TABLE */
+.table-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:16px;}
+.table-header{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--border);}
+.table-title{font-size:12px;font-weight:600;}
+.table-meta{font-size:11px;color:var(--muted2);}
+.table-scroll{overflow:auto;max-height:320px;}
+table{width:100%;border-collapse:collapse;font-size:11px;}
+thead{position:sticky;top:0;z-index:2;}
+th{background:var(--bg);padding:10px 14px;text-align:left;font-size:10px;font-weight:600;color:var(--muted);letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid var(--border);white-space:nowrap;}
+td{padding:9px 14px;border-bottom:1px solid var(--border);color:var(--muted);white-space:nowrap;font-family:'IBM Plex Mono',monospace;font-size:11px;}
+td:first-child{color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-weight:500;}
+tr:hover td{background:rgba(37,99,235,0.03);}
+tr:last-child td{border-bottom:none;}
+
+.section-title{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+.section-title::after{content:'';flex:1;height:1px;background:var(--border);}
+
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-title">MAXI<span>MUS</span></div>
+    <div class="logo-sub">Data Visualizer</div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">Workspace</div>
+    <div class="nav-item active"><span class="nav-icon">📐</span> Dashboard</div>
+  </nav>
+  <div class="sidebar-sheets" id="sidebar-sheets"></div>
+  <div class="sidebar-bottom">
+    <div class="status-row">
+      <div class="status-dot"></div>
+      <span>Server Connected</span>
     </div>
+  </div>
+  </div>
+</aside>
 
-    <button id="filter_button" class="btn btn-primary mb" class="fa fa-external-link"
-                style="margin-left: 0.5vw; margin-bottom: 0.3vw;" onclick="toggleContent()"><i class="fa fa-filter" style="font-size: 1.2em"></i> Filters
-    </button>
-    <div class="container" style="min-height: 10vw;display: none ;margin-bottom: 1.2vw;" id="filter">
-            <div style="margin-top: 20px; margin-left: 20px;">
-                <!-- Search Form -->
-                <form method="GET" action="{{ url_for('GroupManagement_route.GroupManagement',subpath=action) }}"
-                      class="form-inline mb-3 ">
-                    <div class="form-row col-md-12">
-                        {%if userdetails.Role == 'Admin'%}
-                            <div class="form-group col-md-2" style="display:none">
-
-                            <div class="  pl-0">
-                                <label for="search_bankid" class="font-weight-bold text-left">Bank:</label>
-                            </div>
-                            <div class="col-12 pl-0">
-                                <select id="search_bankid" name="search_bankid" class="form-control form-control-md"
-                                        style="width: 100%;">
-                                    <option value="">All</option>
-                                    {% for option in bankname %}
-                                    <option value="{{ option[0] }}" >{{option[1]}}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                        </div>
-                        {%endif%}
-                        <div class="form-group col-md-2">
-                            <div class="  pl-0">
-                                <label for="search_groupname" class="font-weight-bold text-left">Group Name:</label>
-                            </div>
-                            <div class="col-12 pl-0">
-                                <input type="text" maxlength="30" oninput="this.value = this.value.replace(/[^a-zA-Z0-9_.]/g, '')" id="search_groupname" name="search_groupname" class="form-control form-control-md"
-                                       style="width: 100%;" value="{{ request.args.get('search_groupname', '') }}">
-                            </div>
-                        </div>
-
-                        <div class="form-group col-md-2">
-                            <div class=" pl-0">
-                                <label for="search_status" class="font-weight-bold text-left">Status :</label>
-                            </div>
-                            <div class="col-12 pl-0">
-
-                                <select id="search_status" name="search_status" class="form-control form-control-md"
-                                        style="width: 100%;">
-                                    <option value="">All</option>
-                                    <option value="Active">Active</option>
-                                    <option value="Inactive">Inactive</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="form-group col-md-2 align-self-end" style="margin-bottom: 4px">
-                            <div class=" pl-0">
-                                <button type="submit" class="btn btn-primary btn-md">Search</button>
-                            </div>
-                        </div>
-                    </div>
-
-                </form>
-            </div>
+<!-- MAIN -->
+<main class="main">
+  <div class="topbar">
+    <div>
+      <div class="topbar-title" id="topbar-title">Welcome</div>
+      <div class="topbar-sub" id="topbar-sub">Upload a file to begin</div>
     </div>
-    <div class="container">
+    <div class="topbar-right">
+      <div class="file-chip" id="file-chip" style="display:none">
+        📄 <strong id="chip-name">—</strong> <span id="chip-meta">—</span>
+      </div>
+      <button class="btn-upload" onclick="document.getElementById('file-input').click()">+ Upload File</button>
+      <input type="file" id="file-input" accept=".xlsx,.xls,.csv">
+    </div>
+  </div>
 
+  <!-- UPLOAD -->
+  <div id="upload-screen">
+    <div class="upload-card">
 
-        <div class="GroupTable">
-        <div
-            class="Tabletop"
-            style="display: flex; justify-content: space-between; align-items: center;
-            {% if userdetails.Role == 'Checker' %} margin-left: 64%; {% endif %}">
-            <!-- Your content goes here -->
+      <div class="upload-card-title">Upload your data file</div>
+      <div class="upload-card-sub">Drop any Excel or CSV file to instantly generate charts, KPIs, and data insights.</div>
+      <div class="drop-zone" id="drop-zone">
+        <div style="font-size:32px">📂</div>
+        <p>Drag & drop your file here</p>
+      </div>
+      <button class="btn-primary" onclick="document.getElementById('file-input').click()">Choose File</button>
+      <div class="fmt-row">
+        <span class="fmt-badge">XLSX</span>
+        <span class="fmt-badge">XLS</span>
+        <span class="fmt-badge">CSV</span>
+      </div>
+      <div class="err-box" id="err-box"></div>
+    </div>
+  </div>
 
+  <!-- LOADING -->
+  <div id="loading-screen">
+    <div style="text-align:center">
+      <div class="pbi-loader">
+        <div class="pbi-bar"></div><div class="pbi-bar"></div>
+        <div class="pbi-bar"></div><div class="pbi-bar"></div>
+        <div class="pbi-bar"></div>
+      </div>
+      <div class="loading-title">Processing your data...</div>
+      <div class="loading-sub">Python is analyzing your file</div>
+    </div>
+  </div>
 
-                    {% if userdetails.Role == 'Maker' or userdetails.Role == 'Admin' %}
-                    <button id="add-group-button" class="btn btn-primary mb-3">+Add Details</button>
-<!--                    {%else%}-->
-<!--                    <button style="display:None;" id="add-group-button" class="btn btn-primary mb-3">+Add Details</button>-->
-<!--                    {% endif %}-->
-                    <div class="btn-group" style="display: flex; gap: 0.8vw; ">
-                        <div style="display: flex; justify-content: flex-end; padding: 10px;">
-                  <div style="position: relative; w
-                  idth: 200px;margin-top: 0.4vw;">
-                        <input type="text" id="search-input" placeholder="Search" class="form-control" style="width: 100%; padding-left: 30px;">
-                        <i class="fa fa-search" style="position: absolute; top: 50%; left: 10px; transform: translateY(-50%); color: gray;"></i>
-                 </div>
+  <!-- DASHBOARD -->
+  <div id="dashboard">
+    <div class="content">
 
-                </div>
-                            <button id="approve-button" class="btn btn-success mb"
-                                    style="font-size: 0.9vw;margin: 1vw 0vw 1vw 0vw;">Approved
-                            </button>
-                            <button id="pending-button" class="btn btn-warning mb"
-                                    style="font-size: 0.9vw;    margin: 1vw 0vw 1vw 0vw;">Pending
-                            </button>
-                            <button id="decline-button" class="btn btn-danger mb"
-                                    style="font-size: 0.9vw;    margin: 1vw 0vw 1vw 0vw;">Declined
-                            </button>
-                    </div>
-                </div>
-            </div>
-            <table class="table" id="advancedTable">
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th style="max-width:8vw; display:none;">Bank</th>
-                        <th>Group Name</th>
-                        <th>EntityID</th>
-                        <th style="max-width:6vw;">Status</th>
-                        {% if userdetails.Role in ['Admin', 'Maker'] %}
-                             <th>Action</th>
-                        {% else %}
-                            {% if action in ['pending' ,'declined'] %}
-                                <th>Action</th>
-                            {% endif %}
-                        {% endif %}
-                    </tr>
-                </thead>
+      <!-- KPIs -->
+      <div class="kpi-row" id="kpi-row"></div>
 
-                        <tbody class="page" id="page" >
-                             <tr id="new-group-row" style="display: none;">
-                        <td>ID</td>
-                        {% if userdetails.Role == 'Admin'%}
-                        <td style="max-width:8vw;display:none;">
-                            <select class="form-control" name="new-bank" id="bankSelect">
-                                <option value="" disabled selected>Select an option</option>
-                                {% for option in bankname %}
-                                    <option value="{{ option[0] }}">{{ option[1] }}</option>
-                                {% endfor %}
-                            </select>
-                        </td>
-
-                        {%else%}
-                        <td style="display:none">
-                            <span>{{userdetails.BankName}}</span>
-                        <input type="hidden" class="form-control" id="bankSelect" name="new-bank" placeholder="Bank"  value="{{userdetails.bankid}}" >
-                        </td>
-                        {%endif%}
-
-					<td style="width:18vw;">
-                    <input type="text" class="form-control" name="new-groupname" id="groupname" placeholder="Enter Group Name" maxlength="90"  oninput="this.value = this.value.replace(/[^a-zA-Z0-9]/g, '')" required>
-                    </td>
-
-
-				    <td style="width:18vw;"><input type="text" class="form-control" name="new-entityid" id="entityid" placeholder="Enter Entity ID" maxlength="25" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'')" required></td>
-
-                        <td style="max-width:6vw;">
-                            <select class="form-control" name="new-status" id="statusSelect" required>
-                                <option value="Active">Active</option>
-                                <option value="Inactive">Inactive</option>
-                            </select>
-                        </td>
-                                  <td>
-                                 {% if userdetails.Role == 'Maker' or userdetails.Role == 'Admin' or action == 'declined' or action == 'pending'%}
-                                        <div style="display:flex;">
-                                        <button type="button" class="btn btn-primary add-group-btn">Add Details</button>
-                                        <button type="button" class="btn btn-danger fas fa-times" onclick="location.reload()" style="margin-left: 5px"></button>
-                                        </div>
-                                    </td>
-                                 {%endif%}
-                    </tr>
-                            {% for group in groups  %}
-                                <tr class="frow" id="Group-{{ group.id }}">
-                                    <td>{{ loop.index }}</td>
-                                    {% if userdetails.Role == 'Admin'%}
-                                    <td style="max-width:8vw;display:none;"><span class="groups-value">{{ bank_dict[group.bankid] if group.bankid in bank_dict else '' }}</span><input type="text" class="form-control groups-edit" style="display: none;"></td>
-                                    {%else%}
-                                    <td style="max-width:8vw;display:none;"><span class="bank-value">{{ bank_dict[group.bankid] if group.bankid in bank_dict else '' }}</span></td>
-                                    {%endif%}
-
-                                    <td><span class="GroupName-value">{{ group.GroupName }}</span> <input type="text" oninput="this.value = this.value.replace(/[^a-zA-Z0-9_.]/g, '')" class="form-control groupname-edit" style="display: none;" id="groupnameeditInput-{{ group.id }}"></td>
-
-                                    <td><span class="EntityID-value">{{ group.EntityID }}</span> <input type="text" oninput="this.value = this.value.replace(/[^a-zA-Z0-9]/g, '')" class="form-control entityid-edit" style="display: none;" id="entityideditInput-{{ group.id }}"></td>
-
-
-                                    <td style="max-width:6vw;"><span class="Status-value">{{ group.Status }}</span>
-                                        <select class="form-control status-edit" style="display: none;" required>
-                                            <option value="Active">Active</option>
-                                            <option value="Inactive">Inactive</option>
-                                        </select>
-
-                                    </td>
-                                    {% if action == 'pending'%}
-                                        <td>
-                                            <div class="button-container">
-                                                {% if userdetails.Role == 'Checker' or userdetails.Role == 'Admin' %}
-                                                {% set action_route = '/Group_Management_module/GroupManagement/update/' %}
-                                                {% set button_label = 'Approve' %}
-
-                                                {% if group.reservedfield1 is not none %}
-                                                    {% if 'toggle' in group.reservedfield1 %}
-                                                        {% set action_route = '/Group_Management_module/GroupManagement/toggle/' %}
-                                                        {% set button_label = 'Toggle' %}
-                                                    {% elif 'delete' in group.reservedfield1 %}
-                                                        {% set action_route = '/Group_Management_module/GroupManagement/delete/' %}
-                                                        {% set button_label = 'Delete' %}
-                                                    {% endif %}
-                                                {% endif %}
-
-                                                <form action="{{ action_route }}{{ group.id }}" method="post"
-                                                      onsubmit="return confirm('Are you sure you want to Approve this group? \nPlease Validate Before Approving') ? (alert('The group has been successfully {{button_label}}!'), true) : false;">
-                                                    <input type="hidden" name="action" value="approved">
-                                                    <input type="hidden" name="username" value="{{ user }}">
-                                                    <button type="submit" class="btn btn-success" style="font-size: 0.9em; display: flex; align-items: center;">
-                                                        <i class="fa fa-check" style="margin-right:0.3vw;"></i>{{ button_label }}
-                                                    </button>
-                                                </form>
-
-
-                                                    <form action="/Group_Management_module/GroupManagement/update/{{ group.id }}  "method="post" id="combruleid{{group.id}}"
-                                                          onsubmit="return confirmSubmission('Are you sure you want to Decline this Group?');">
-
-                                                        <input type="hidden" name="action" value="declined">
-                                                        <input type="hidden" name="username" value="{{ user }}">
-                                                        <button type="submit" class="btn btn-danger" style="font-size: 0.9em; display: flex; align-items: center;">
-                                                           <i class="fa fa-times" style="margin-right: 0.3vw;"></i>
-                                                              Decline
-                                                        </button>
-                                                    </form>
-                                                {% else %}
-                                                    <form action="/Group_Management_module/GroupManagement/update/{{ group.id }}" method="post"
-                                                          onsubmit="return confirmSubmission('Are you sure you want to Alert this Group?');" >
-                                                        <input type="hidden" name="action" value="alert">
-                                                        <input type="hidden" name="username" value="{{ user }}">
-                                                        <button type="submit" class="btn btn-warning" style="font-size: 0.9em;">
-                                                            <i class="fa fa fa-bell"></i> Alert
-                                                        </button>
-                                                    </form>
-                                                    <form action="/Group_Management_module/GroupManagement/delete/{{ group.id }}" method="post"
-                                                          onsubmit="return confirmSubmission('Are you sure you want to delete this Group?');">
-                                                        <input type="hidden" name="username" value="{{ user }}">
-                                                        <input type="hidden" name="action" value="pending">
-                                                        <button type="submit" class="btn btn-danger fas fa-trash-alt"></button>
-                                                    </form>
-                                                {% endif %}
-                                            </div>
-                                        </td>
-                                    {% elif action == 'declined' %}
-                                        <td>
-
-                                            <div class="button-container">
-                                                {% if userdetails.Role == 'Checker' or userdetails.Role == 'Maker' %}
-                                                    <span class="text-danger">
-                                                             <i class="fas fa-exclamation-circle"></i>  Declined
-                                                     </span>
-                                                {% else %}
-                                                    <button type="button" class="btn btn-primary edit-btn fas fa-edit"></button>
-                                                    <button type="button" class="btn btn-success update-btn " style="display: none;"
-                                                            id="reupdate"
-                                                    onsubmit="return confirmSubmission('Are you sure you want to Update this Group?');">
-                                                        <div style="display:flex">
-                                                            <i class="fas fa-sync-alt" style="padding-top: 3px;  padding-right: 3px;"></i>
-                                                            <a> Update</a></div>
-                                                    </button>
-                                                    <form action="/Group_Management_module/GroupManagement/update/{{ group.id }}" method="post">
-                                                        <input type="hidden" name="action" value="RequestAgain">
-                                                        <input type="hidden" name="username" value="{{ user }}">
-                                                        <button type="submit" class="btn btn-success "
-                                                                style="font-size: 0.8em !important;font-family: sans-serif;">Resend
-                                                        </button>
-                                                    </form>
-                                                    <form action="/Group_Management_module/GroupManagement/delete/{{ group.id }}" method="post">
-                                                        <input type="hidden" name="username" value="{{ user }}">
-                                                        <input type="hidden" name="action" value="declined">
-                                                        <button type="submit" class="btn btn-danger fas fa-trash-alt"></button>
-                                                    </form>
-                                                {% endif %}
-
-                                            </div>
-
-                                        </td>
-                                    {% else %}
-                                        {% if userdetails.Role == 'Maker' or userdetails.Role == 'Admin' %}
-                                            <td>
-                                                <div class="button-container">
-                                                <!-- Edit Button with tooltip if disabled -->
-                                                <button type="button" class="btn btn-primary edit-btn fas fa-edit"
-                                                    {% if 'Pendingupdation' in group.isid %} disabled title="It is already present in pending tab for changes" {% endif %}>
-                                                </button>
-
-                                                <button type="button" class="btn btn-success update-btn " style="display: none;"><i class="fas fa-sync-alt" style="margin-right:5px;"></i>Update</button>
-
-                                                <form action="/Group_Management_module/GroupManagement/toggle/{{ group.id }}" method="post">
-                                                    <input type="hidden" name="username" value="{{ user }}">
-                                                    <!-- Toggle Button with tooltip if disabled -->
-                                                    <button type="submit"
-                                                            class="btn toggle-group-btn btn-{{ 'success fas fa-check' if group.Status == 'Inactive' else 'warning fas fa-times' }}"
-                                                            {% if 'Pendingtoggle' in group.isid %} disabled title="It is already present in pending tab for changes" {% endif %}>
-                                                    </button>
-                                                </form>
-
-                                                <form action="/Group_Management_module/GroupManagement/delete/{{ group.id }}" method="post">
-                                                    <input type="hidden" name="username" value="{{ user }}">
-                                                    <!-- Delete Button with tooltip if disabled -->
-                                                    <button type="submit" class="btn btn-danger fas fa-trash-alt delete-group-btn"
-                                                            {% if 'Pendingdeletion' in group.isid %} disabled title="It is already present in pending tab for changes" {% endif %}>
-                                                    </button>
-                                                </form>
-                                            </div>
-
-
-                                            </td>
-                                        {% endif %}
-
-
-                                    {% endif %}
-                                </tr>
-                            {% endfor %}
-
-                </tbody>
-            </table>
-
+      <!-- FILTER BAR -->
+      <div class="filter-bar">
+        <span class="filter-label">X Axis</span>
+        <select class="filter-select" id="x-col"></select>
+        <span class="filter-label">Y Axis</span>
+        <select class="filter-select" id="y-col"></select>
+        <div class="ct-pills">
+          <button class="ct-pill active" data-t="bar">Bar</button>
+          <button class="ct-pill" data-t="line">Line</button>
         </div>
-    </div>
-</div>
-</div>
+        <div class="filter-right">
+          <div class="search-wrap">
+            <input class="search-input" id="tbl-search" placeholder="Search data...">
+          </div>
+        </div>
+      </div>
 
-<script src="{{ url_for('static',filename='/vendor/GroupManagement.js') }}"></script>
+      <!-- ROW 2: Main Bar Chart + Pie Chart side by side -->
+      <div class="charts-row2">
+        <div class="chart-card">
+          <div class="chart-header">
+            <div>
+              <div class="chart-subtitle" id="main-chart-sub">Custom axis selection</div>
+            </div>
+            <span class="chart-badge badge-main">INTERACTIVE</span>
+          </div>
+          <div class="chart-wrap"><canvas id="chart-main"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-header">
+            <div>
+              <div class="chart-title" id="pie-title">Category Breakdown</div>
+              <div class="chart-subtitle" id="pie-sub">By category</div>
+            </div>
+            <span class="chart-badge badge-pie">PIE</span>
+          </div>
+          <div class="chart-wrap short"><canvas id="chart-pie"></canvas></div>
+        </div>
+      </div>
+
+      <!-- ROW 3: Column Averages full width -->
+      <div class="charts-row3">
+        <div class="chart-card">
+          <div class="chart-header">
+            <div>
+              <div class="chart-subtitle">Mean value per numeric column</div>
+            </div>
+            <span class="chart-badge badge-avg">AVG</span>
+          </div>
+          <div class="chart-wrap short"><canvas id="chart-avg"></canvas></div>
+        </div>
+      </div>
+
+      <!-- COL STATS -->
+      <div class="section-title">Numeric Column Statistics</div>
+      <div class="col-stats-grid" id="col-stats-grid"></div>
+
+      <!-- TABLE -->
+      <div class="section-title">Raw Data</div>
+      <div class="table-card">
+        <div class="table-header">
+          <div class="table-title">Data Table</div>
+          <div class="table-meta" id="tbl-meta">—</div>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead id="tbl-head"></thead>
+            <tbody id="tbl-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</main>
 
 <script>
-    var queryString = window.location.search;
-    var urlParams = new URLSearchParams(queryString);
-    if (urlParams.has('erromsg')) {
-        var errorMsg = urlParams.get('erromsg');
-        alert(errorMsg);
+Chart.register(ChartDataLabels);
+
+let apiData = null, currentIdx = 0;
+let charts = { main:null, pie:null, avg:null };
+const C = ['#2563eb','#7c3aed','#059669','#d97706','#dc2626','#0891b2','#be185d','#065f46'];
+
+// Upload
+const dropZone = document.getElementById('drop-zone');
+const finput   = document.getElementById('file-input');
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag'); handleFile(e.dataTransfer.files[0]); });
+finput.addEventListener('change', e => handleFile(e.target.files[0]));
+
+async function handleFile(file) {
+  if (!file) return;
+  showLoading();
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const res  = await fetch('/upload', { method:'POST', body:form });
+    const data = await res.json();
+    if (!res.ok) { showError(data.detail || 'Upload failed'); showUpload(); return; }
+    apiData = data;
+    renderDashboard(0);
+  } catch(e) {
+    showError('Cannot connect to server. Is app.py running?');
+    showUpload();
+  }
+}
+
+function renderDashboard(idx) {
+  currentIdx = idx;
+  const sheet = apiData.sheets[idx];
+
+  document.getElementById('topbar-title').textContent = apiData.filename;
+  document.getElementById('topbar-sub').textContent   = `${sheet.name} · ${sheet.stats.total_rows} rows · ${sheet.stats.total_cols} cols`;
+  document.getElementById('file-chip').style.display  = 'flex';
+  document.getElementById('chip-name').textContent    = apiData.filename;
+  document.getElementById('chip-meta').textContent    = `${sheet.stats.total_rows}R × ${sheet.stats.total_cols}C`;
+
+  // Sidebar sheets
+  document.getElementById('sidebar-sheets').innerHTML = apiData.sheets.map((s,i) => `
+    <div class="sheet-nav-item ${i===idx?'active':''}" onclick="renderDashboard(${i})">
+      <div class="sheet-dot"></div>${s.name}
+    </div>`).join('');
+
+  // KPIs
+  const s = sheet.stats;
+  document.getElementById('kpi-row').innerHTML = `
+    <div class="kpi-card k1"><div class="kpi-label">Total Rows</div><div class="kpi-value k1">${s.total_rows.toLocaleString()}</div><div class="kpi-sub">data records</div></div>
+    <div class="kpi-card k2"><div class="kpi-label">Columns</div><div class="kpi-value k2">${s.total_cols}</div><div class="kpi-sub">fields detected</div></div>
+    <div class="kpi-card k3"><div class="kpi-label">Numeric Cols</div><div class="kpi-value k3">${s.numeric_cols}</div><div class="kpi-sub">quantitative</div></div>
+    <div class="kpi-card k4"><div class="kpi-label">Missing Values</div><div class="kpi-value k4">${s.missing_vals.toLocaleString()}</div><div class="kpi-sub">empty cells</div></div>
+  `;
+
+  // Axis selectors
+  const allCols = sheet.headers;
+  const numCols = sheet.numeric_cols;
+  const xSel = document.getElementById('x-col');
+  const ySel = document.getElementById('y-col');
+  xSel.innerHTML = allCols.map((h,i) => `<option value="${i}">${h}</option>`).join('');
+  ySel.innerHTML = (numCols.length ? numCols : allCols).map(c => {
+    const i = allCols.indexOf(c);
+    return `<option value="${i}">${c}</option>`;
+  }).join('');
+  if (sheet.label_col) xSel.value = allCols.indexOf(sheet.label_col);
+
+  xSel.onchange = ySel.onchange = () => buildMainChart(sheet);
+  document.querySelectorAll('.ct-pill').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.ct-pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      buildMainChart(sheet);
+    };
+  });
+
+  buildMainChart(sheet);
+  buildPieChart(sheet);
+  buildAvgChart(sheet);
+  buildColStats(sheet);
+  buildTable(sheet);
+
+  document.getElementById('upload-screen').style.display  = 'none';
+  document.getElementById('loading-screen').style.display = 'none';
+  document.getElementById('dashboard').style.display      = 'block';
+}
+
+function buildMainChart(sheet) {
+  const xi   = parseInt(document.getElementById('x-col').value);
+  const yi   = parseInt(document.getElementById('y-col').value);
+  const type = document.querySelector('.ct-pill.active').dataset.t;
+  const rows = sheet.rows;
+  const labels = rows.slice(0,60).map(r => String(r[xi] ?? ''));
+  const values = rows.slice(0,60).map(r => parseFloat(r[yi]) || 0);
+  const isRound = type==='pie'||type==='doughnut';
+  document.getElementById('main-chart-sub').textContent = `${sheet.headers[xi]} vs ${sheet.headers[yi]}`;
+  if (charts.main) charts.main.destroy();
+  charts.main = new Chart(document.getElementById('chart-main').getContext('2d'), {
+    type,
+    data: {
+      labels,
+      datasets: [{
+        label: sheet.headers[yi],
+        data: values,
+        backgroundColor: isRound ? C.slice(0,labels.length).map(c=>c+'cc') : C[0]+'bb',
+        borderColor:     isRound ? C.slice(0,labels.length) : C[0],
+        borderWidth: 1.5,
+        borderRadius: type==='bar' ? 4 : 0,
+        tension: 0.4, fill: false,
+        pointBackgroundColor: C[0], pointRadius: type==='line' ? 3 : 0,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: isRound, labels:{color:'#64748b',font:{family:'IBM Plex Sans',size:10},boxWidth:10,padding:10} },
+        tooltip: tooltip(),
+        datalabels: {
+          display: ctx => isRound ? true : ctx.dataset.data[ctx.dataIndex] > 0,
+          anchor: isRound ? 'center' : 'end',
+          align:  isRound ? 'center' : 'end',
+          color:  isRound ? '#fff' : '#64748b',
+          font: { family:'IBM Plex Mono', size: isRound ? 10 : 9, weight:'600' },
+          formatter: (v, ctx) => {
+            if (isRound) {
+              const total = ctx.dataset.data.reduce((a,b)=>a+b,0);
+              return `${ctx.chart.data.labels[ctx.dataIndex]}\n${fmt(v)}\n${((v/total)*100).toFixed(1)}%`;
+            }
+            return fmt(v);
+          },
+          clip: false, offset: isRound ? 0 : 4,
+        }
+      },
+      scales: isRound ? {} : {
+        x: { ticks:{color:'#94a3b8',font:{family:'IBM Plex Sans',size:10},maxTicksLimit:14,maxRotation:45}, grid:{color:'#e2e5ef'} },
+        y: { ticks:{color:'#94a3b8',font:{family:'IBM Plex Mono',size:10},callback:v=>fmt(v)}, grid:{color:'#e2e5ef'} }
+      },
+      layout: { padding:{ top:24 } }
     }
-    function getQueryParam(param) {
-        const urlParams = new URLSearchParams(window.location.search);
-        return urlParams.get(param);
+  });
+}
+
+function buildPieChart(sheet) {
+  const cd = sheet.chart_data.pie;
+  if (!cd) return;
+  if (charts.pie) charts.pie.destroy();
+  charts.pie = new Chart(document.getElementById('chart-pie').getContext('2d'), {
+    type: 'doughnut',
+    data: { labels: cd.labels, datasets: [{ data: cd.data, backgroundColor: C.slice(0,cd.labels.length).map(c=>c+'cc'), borderColor: C.slice(0,cd.labels.length), borderWidth:2 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display:true, position:'bottom', labels:{color:'#64748b',font:{family:'IBM Plex Sans',size:10},boxWidth:10,padding:8} },
+        tooltip: tooltip(),
+        datalabels: {
+          display: true, color:'#fff',
+          font: { family:'IBM Plex Mono', size:10, weight:'700' },
+          formatter: (v, ctx) => {
+            const total = ctx.dataset.data.reduce((a,b)=>a+b,0);
+            const pct = ((v/total)*100).toFixed(1);
+            if ((v/total) < 0.05) return '';
+            return `${fmt(v)}\n${pct}%`;
+          }
+        }
+      }
     }
+  });
+}
+
+function buildAvgChart(sheet) {
+  const cd = sheet.chart_data.averages;
+  if (!cd) return;
+  if (charts.avg) charts.avg.destroy();
+  charts.avg = new Chart(document.getElementById('chart-avg').getContext('2d'), {
+    type: 'bar',
+    data: { labels: cd.labels, datasets: [{ label:'Average', data: cd.data, backgroundColor: C.map(c=>c+'99'), borderColor: C, borderWidth:1.5, borderRadius:4 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      indexAxis: 'y',
+      plugins: {
+        legend: { display:false }, tooltip: tooltip(),
+        datalabels: { anchor:'end', align:'end', color:'#64748b', font:{family:'IBM Plex Mono',size:9,weight:'600'}, formatter: v => fmt(v), clip:false }
+      },
+      scales: {
+        x: { ticks:{color:'#94a3b8',font:{size:9},callback:v=>fmt(v)}, grid:{color:'#e2e5ef'} },
+        y: { ticks:{color:'#64748b',font:{family:'IBM Plex Sans',size:10}}, grid:{display:false} }
+      },
+      layout: { padding:{ right:50 } }
+    }
+  });
+}
+
+function tooltip() {
+  return { backgroundColor:'#1a1f2e', borderColor:'#2a2d3e', borderWidth:1, titleColor:'#e2e8f0', bodyColor:'#94a3b8', titleFont:{family:'IBM Plex Sans',size:12,weight:'600'}, bodyFont:{family:'IBM Plex Mono',size:11}, padding:12, cornerRadius:6 };
+}
+
+function fmt(v) {
+  if (v===null||v===undefined||isNaN(v)) return v;
+  if (Math.abs(v)>=1e9)  return (v/1e9).toFixed(1)+'B';
+  if (Math.abs(v)>=1e6)  return (v/1e6).toFixed(1)+'M';
+  if (Math.abs(v)>=1000) return (v/1000).toFixed(1)+'K';
+  return Number.isInteger(v) ? v : parseFloat(v.toFixed(2));
+}
+
+function buildColStats(sheet) {
+  const cs = sheet.col_stats;
+  const keys = Object.keys(cs);
+  if (!keys.length) { document.getElementById('col-stats-grid').innerHTML = '<p style="color:var(--muted2);font-size:12px">No numeric columns.</p>'; return; }
+  document.getElementById('col-stats-grid').innerHTML = keys.map(col => `
+    <div class="col-stat-card">
+      <div class="col-stat-name">${col}</div>
+      <div class="col-stat-r"><span>Mean</span><span>${fmt(cs[col].mean)}</span></div>
+      <div class="col-stat-r"><span>Min</span><span>${fmt(cs[col].min)}</span></div>
+      <div class="col-stat-r"><span>Max</span><span>${fmt(cs[col].max)}</span></div>
+      <div class="col-stat-r"><span>Median</span><span>${fmt(cs[col].median)}</span></div>
+      <div class="col-stat-r"><span>Std Dev</span><span>${fmt(cs[col].std)}</span></div>
+      <div class="col-stat-r"><span>Sum</span><span>${fmt(cs[col].sum)}</span></div>
+    </div>`).join('');
+}
+
+let allRows=[], allHeaders=[];
+function buildTable(sheet) {
+  allHeaders = sheet.headers; allRows = sheet.rows;
+  document.getElementById('tbl-head').innerHTML = `<tr>${allHeaders.map(h=>`<th>${h}</th>`).join('')}</tr>`;
+  renderRows(allRows.slice(0,200));
+  document.getElementById('tbl-search').oninput = function() {
+    const q = this.value.toLowerCase();
+    const filtered = q ? allRows.filter(r=>r.some(c=>String(c??'').toLowerCase().includes(q))) : allRows;
+    renderRows(filtered.slice(0,200));
+  };
+}
+function renderRows(rows) {
+  document.getElementById('tbl-meta').textContent = `Showing ${rows.length} of ${allRows.length} rows`;
+  document.getElementById('tbl-body').innerHTML = rows.map(r =>
+    `<tr>${allHeaders.map((_,i)=>`<td>${r[i]??''}</td>`).join('')}</tr>`
+  ).join('') || `<tr><td colspan="${allHeaders.length}" style="text-align:center;padding:32px;color:var(--muted2)">No results</td></tr>`;
+}
+
+function showLoading() {
+  document.getElementById('upload-screen').style.display  = 'none';
+  document.getElementById('loading-screen').style.display = 'flex';
+  document.getElementById('dashboard').style.display      = 'none';
+}
+function showUpload() {
+  document.getElementById('upload-screen').style.display  = 'flex';
+  document.getElementById('loading-screen').style.display = 'none';
+  document.getElementById('dashboard').style.display      = 'none';
+}
+function showError(msg) {
+  const el = document.getElementById('err-box');
+  el.textContent = '⚠️ ' + msg; el.style.display = 'block';
+}
 </script>
-{% endblock %}
+</body>
+</html>
+
+
+
+

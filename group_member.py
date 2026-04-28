@@ -1,378 +1,209 @@
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
-import time
-import traceback
-from datetime import datetime
-import time
-from flask import Flask, session, request, render_template, redirect, url_for
-from sqlalchemy import text
-from app.LogsImport import log_error_to_database, log_event
-from app.FRMDBOperations import get_SQL_engine
+import numpy as np
+import io
+import json
+import os
 
-app = Flask(__name__)
+app = FastAPI(title="MAXIMUS - Excel Visualizer")
 
+# Allow frontend to talk to backend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-class GroupMembersclass:
-    def __init__(self, bankid, CIF, GroupId, CreatedBy, Status):
-        self.id = str(int(time.time()))
-        self.bankid = bankid
-        self.CIF = CIF
-        self.GroupId = GroupId
-        self.appAction = 'Pending'
-        self.Status = Status
-        self.created_by = CreatedBy
-        self.created_on = datetime.now()
-        self.modified_by = ''
-        self.modified_on = ''
-        self.appApprovedby = ''
-        self.reservedfield1 = ''
+# Serve frontend HTML
+@app.get("/", response_class=HTMLResponse)
+async def serve_frontend():
+    with open("templates/index.html", "r", encoding="utf-8") as f:
+        return f.read()
 
 
-class GroupManagementManager:
-    def __init__(self, user, df, del_df, engine, conn):
-        self.user = user
-        self.df = df
-        self.deleted_df = del_df
-        self.engine = engine
-        self.conn = conn
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...)):
+    """
+    Accepts .xlsx, .xls, .csv files
+    Returns: sheets, headers, rows, stats, chart data
+    """
+    filename = file.filename.lower()
+    contents = await file.read()
+
+    try:
+        # ── Read file based on extension ──────────────────────────────────
+        if filename.endswith(".csv"):
+            df_dict = {"Sheet1": pd.read_csv(io.BytesIO(contents))}
 
 
-    def format_sql_value(self, val):
-        if pd.isna(val):
-            return 'NULL'
-        elif isinstance(val, pd.Timestamp):  # Handle Pandas Timestamp
-            return f"'{val.strftime('%Y-%m-%d %H:%M:%S')}'"
-        else:  # Handle all other cases
-            return val
-
-
-    def save_to_database(self, savedf, dbaction, groupid=None):
-        with get_SQL_engine().connect() as connection:
-            try:
-                if dbaction == 'insert':
-                    savedf = savedf.drop_duplicates()
-                    # Insert into GroupMaster table
-                    savedf.to_sql(name='GroupMaster', con=connection, if_exists='append', index=False)
-
-                elif dbaction == 'update':
-                    for _, row in savedf.iterrows():
-                        row['ReservedField1'] = ''
-                        case_id = row['Id']  # ID to identify the row
-                        set_clause = ", ".join(
-                            [f"{col} = {self.format_sql_value(val)}" for col, val in row.items()]
-                        )
-                        sql_query = f"UPDATE GroupMaster SET {set_clause} WHERE Id = {repr(case_id)}"
-                        print(f"Executing SQL: {sql_query}")
-                        connection.execute(text(sql_query))
-
-                elif dbaction == 'delete':
-                    sql_query = f"DELETE FROM GroupMaster WHERE Id = {repr(groupid)}"
-                    print(f"Executing SQL: {sql_query}")
-                    connection.execute(text(sql_query))
-
-                connection.commit()
-
-            except Exception as e:
-                print(f"An error occurred: {e}")
-                connection.rollback()
-            finally:
-                connection.close()
-
-    def create_Group(self, bankid, AccountNo, GroupId, CreatedBy, Status):
-        existing_group = self.df[
-            (self.df['bankid'] == bankid) &
-            (self.df['CIF'] == AccountNo) &
-            (self.df['GroupId'] == GroupId) &
-            (self.df['Status'] == Status)
-        ]
-
-        if not existing_group.empty:
-            return "Group already exists"
-
-            r1Group = MyGroupClass(bankid, AccountNo, GroupId, CreatedBy, Status)
-
-            Group_data = {
-                'id': r1Group.id,
-                'bankid': bankid,
-                'CIF': AccountNo,
-                'GroupId': GroupId,
-                'appAction': r1Group.appAction,
-                'created_on': r1Group.CreatedOn,
-                'created_by': r1Group.CreatedBy,
-                'reservedfield1': '',
-                'Status': Status,
-                'appApprovedby': None
+        elif filename.endswith(".xlsx") or filename.endswith(".xls"):
+            xls = None
+            for engine in ["openpyxl", "xlrd"]:
+                try:
+                    xls = pd.ExcelFile(io.BytesIO(contents), engine=engine)
+                    break
+                except Exception:
+                    continue
+            if xls is None:
+                raise HTTPException(status_code=400, detail="Could not read Excel file.")
+            df_dict = {
+                sheet: xls.parse(sheet)
+                for sheet in xls.sheet_names
             }
-
-            userdetails = session.get('userdetails')
-            username = userdetails.get('UserName')
-            id = f'log_{int(time.time())}'
-            navlink = '/Group_Management_module/GroupManagement'
-            obj_id = f'group_{r1Group.id}'
-            bank_session_id = userdetails.get('bankid')
-            ActionType = "Maker"
-
-            self.df = pd.concat([self.df, pd.DataFrame([Group_data])], ignore_index=True)
-            self.save_to_database(pd.DataFrame([Group_data]), 'insert')
-
-            log_event(log_id, f"{username}",f'Group created', navlink,
-              obj_id, bank_session_id, ActionType, self.conn
-              )
-            return r1Group.id
-
-    def update_Group(self, group_id, bankid=None, AccountNo=None, GroupId=None, Status=None, appstatus=None, ModifiedBy=None):
-        userdetails = session.get('userdetails')
-        username = userdetails.get('UserName')
-        id = f'log_{int(time.time())}'
-        navlink = '/Group_Management_module/GroupManagement'
-        obj_id = f'group_{group_id}'
-        bankid = session.get('userdetails')['bankid']
-        ActionType = "Maker"
-
-        if appstatus is not None and appstatus == 'Approved' and self.df.loc[
-            self.df['id'] == group_id, 'reservedfield1'].isnull().all():
-            self.df.loc[self.df['id'] == str(group_id), 'appAction'] = 'Approved'
-            self.df.loc[self.df['id'] == str(group_id), 'modified_on'] = datetime.now()
-            self.save_to_database(self.df[self.df['id'] == str(group_id)], 'update', group_id)
-
-            payload = {
-                "obj": "tbl_GroupMembers",
-                "rowvals": [
-                    int(group_id),
-                    self.df.loc[self.df['id'] == group_id, 'bankid'].values[0],
-                    self.df.loc[self.df['id'] == group_id, 'CIF'].values[0],
-                    self.df.loc[self.df['id'] == group_id, 'GroupId'].values[0],
-                    self.df.loc[self.df['id'] == group_id, 'Status'].values[0]
-                ],
-                "Ckeycols": ["id", "bankid", "CIF", "GroupId", "Status"],
-                "wherevals": [group_id],
-                "wherecols": ["id"],
-                "operation": "insert"
-            }
-
-            # url = config["IgniteDumpingUrl"]
-            # response = requests.post(url, json=payload, headers={'Content-Type': 'application/json'})
-            log_event(id, f"{username}", f'Approved group update', navlink, obj_id, bankid, ActionType, self.conn)
-
-            return group_id
-
-        elif appstatus is 'Approved' and self.df['reservedfield1'] is not None:
-            self.df.loc[self.df['id'] == group_id, 'appAction'] = appstatus
-            p_rule = self.df[(self.df['id'] == group_id) & (self.df['appApprovedby'].notnull())]
-            appApprovedby_value = str(p_rule.iloc[0]['appApprovedby'])
-
-        if appApprovedby_value:
-            p_rule = self.df[self.df['id'] == group_id]
-            p_rule = self.df[self.df['id'] == group_id].drop(columns=['id'])
-            self.df.loc[self.df['id'] == int(appApprovedby_value), p_rule.columns] = p_rule.values
-            self.df = self.df[~self.df['id'].isin([int(group_id)])]
-            self.df.loc[self.df['id'] == group_id, 'appApprovedby'] = ''
-            self.df.loc[self.df['id'] == group_id, 'id'] = int(appApprovedby_value)
-            old_id = group_id
-            group_id = int(appApprovedby_value)
-            self.save_to_database(self.df.loc[self.df['id'] == group_id], 'update', group_id)
-            self.save_to_database(self.df.loc[self.df['id'] == old_id], 'delete', old_id)
-            payload = {
-                "obj": "tbl_GroupMembers",
-                "rowvals": [
-                    self.df.loc[self.df['id'] == group_id, 'bankid'].values[0],
-                    self.df.loc[self.df['id'] == group_id, 'CIF'].values[0],
-                    self.df.loc[self.df['id'] == group_id, 'GroupId'].values[0],
-                    self.df.loc[self.df['id'] == group_id, 'Status'].values[0]
-                ],
-                "Ckeycols": ["bankid", "CIF", "GroupId", "Status"],
-                "wherevals": [group_id],
-                "wherecols": ["id"],
-                "operation": "update"
-            }
-
-            # url = config["IgniteDumpingUrl"]
-            # response = requests.post(url, json=payload, headers={'Content-Type': 'application/json'})
-            log_event(id, f"{username}", f'Approved group update', navlink, obj_id, bankid, ActionType, self.conn)
-
-            return group_id
-
-        elif appstatus is 'Approved' and self.df['reservedfield1'] is not None:\
-        self.df.loc[self.df['id'] == group_id, 'appAction'] = appstatus
-        p_rule = self.df[(self.df['id'] == group_id) & (self.df['appApprovedby'].notnull())]
-        appApprovedby_value = str(p_rule.iloc[0]['appApprovedby'])
-
-        if appApprovedby_value:
-            p_rule = self.df[self.df['id'] == group_id]
-            p_rule = self.df[self.df['id'] == group_id].drop(columns=['id'])
-            self.df.loc[self.df['id'] == int(appApprovedby_value), p_rule.columns] = p_rule.values
-            self.df = self.df[~self.df['id'].isin([int(group_id)])]
-            self.df.loc[self.df['id'] == group_id, 'appApprovedby'] = ''
-            self.df.loc[self.df['id'] == group_id, 'id'] = int(appApprovedby_value)
-            old_id = group_id
-            group_id = int(appApprovedby_value)
-            self.save_to_database(self.df.loc[self.df['id'] == group_id], 'update', group_id)
-            self.save_to_database(self.df.loc[self.df['id'] == old_id], 'delete', old_id)
-            payload = {
-                "obj": "tbl_GroupMembers",
-                "rowvals": [
-                    self.df.loc[self.df['id'] == group_id, 'bankid'].values[0],
-                    self.df.loc[self.df['id'] == group_id, 'CIF'].values[0],
-                    self.df.loc[self.df['id'] == group_id, 'GroupId'].values[0],
-                    self.df.loc[self.df['id'] == group_id, 'Status'].values[0]
-                ],
-                "Ckeycols": ["bankid", "CIF", "GroupId", "Status"],
-                "wherevals": [group_id],
-                "wherecols": ["id"],
-                "operation": "update"
-            }
-            url = config["IgniteDumpingUrl"]
-            # response = requests.post(url, json=payload, headers={'Content-Type': 'application/json'})
-            # print(response.status_code)
-            ActionType = "Approver"
-            log_event(id, f"{username}", f'Approved group update',
-                      navlink,
-                      obj_id, bankid, ActionType, self.conn)
-
-            return group_id
-
-        elif appstatus is not None and appstatus is 'Declined':
-            self.df.loc[self.df['id'] == str(group_id), 'appAction'] = 'Declined'
-            self.df.loc[self.df['id'] == str(group_id), 'ModifiedOn'] = datetime.now()
-            log_event(id, f"{username}", f'Declined group update', navlink,
-                      obj_id, bankid, ActionType, self.conn)
-            self.save_to_database(self.df.loc[self.df['id'] == str(group_id)], 'update', str(group_id))
-
         else:
-            # self.df.loc[self.df['id'] == group_id, 'appAction'] = 'Pending'
-            if group_id in self.df['id'].values:
-                old_row = self.df[self.df['id'] == group_id].iloc[0]
-                copyRow = old_row.copy()
-                copyRow['id'] = int(time.time())  # Set new RoleID as the current length of the DataFrame + 1
-                copyRow['appAprrovedby'] = int(group_id)
-                copyRow['appAction'] = 'Pending'
-                # old_row = self.df[self.df['id'] == group_id].iloc[0]
-                self.df.loc[len(self.df)] = copyRow
-                group_id = copyRow['id']
-                # self.save_to_database(self.df)
-                old_values = {
-                    'bankid': old_row['bankid'],
-                    'CIF': old_row['CIF'],
-                    'GroupId': old_row['GroupId']
-                }
-                if bankid:
-                    self.df.loc[self.df['id'] == group_id, 'bankid'] = bankid
-                if AccountNo:
-                    self.df.loc[self.df['id'] == group_id, 'CIF'] = AccountNo
-                if GroupId:
-                    self.df.loc[self.df['id'] == group_id, 'GroupId'] = GroupId
+            raise HTTPException(status_code=400, detail="Unsupported file format. Use .xlsx, .xls or .csv")
 
-                if Status:
-                    self.df.loc[self.df['id'] == group_id, 'Status'] = Status
+        # ── Process each sheet ────────────────────────────────────────────
+        result = {
+            "filename": file.filename,
+            "sheets": []
+        }
 
-                self.df.loc[self.df['id'] == group_id, 'reservedfield1'] = str(old_values)
-                userdetails = session.get('userdetails')
-                new_row = self.df[self.df['id'] == group_id].iloc[0]
-                new_values = {
-                    'bankid': new_row['bankid'],
-                    'CIF': new_row['CIF'],
-                    'GroupId': new_row['GroupId'],
-                    'Status': new_row['Status'],
+        for sheet_name, df in df_dict.items():
+            # Clean up
+            df = df.dropna(how="all").reset_index(drop=True)
+            df.columns = [str(c).strip() for c in df.columns]
+
+            # Replace NaN with None for JSON serialization
+            df = df.where(pd.notnull(df), None)
+
+            headers = list(df.columns)
+            rows    = df.head(500).values.tolist()  # max 500 rows for table
+
+            # ── Stats ─────────────────────────────────────────────────────
+            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+            stats = {
+                "total_rows":    len(df),
+                "total_cols":    len(headers),
+                "numeric_cols":  len(numeric_cols),
+                "missing_vals":  int(df.isnull().sum().sum()),
+            }
+
+            # ── Numeric column stats (for summary cards) ──────────────────
+            col_stats = {}
+            for col in numeric_cols:
+                s = df[col].dropna()
+                if len(s) == 0:
+                    continue
+                col_stats[col] = {
+                    "mean":   round(float(s.mean()), 2),
+                    "min":    round(float(s.min()),  2),
+                    "max":    round(float(s.max()),  2),
+                    "sum":    round(float(s.sum()),  2),
+                    "median": round(float(s.median()), 2),
+                    "std":    round(float(s.std()),  2),
                 }
 
-            self.save_to_database(self.df.loc[self.df['id'] == group_id], 'insert')
-            log_event(f'log_{int(time.time())}', userdetails.get('UserName'), f'Group updated {old_values} to {new_values}', f'/Group_Management_module/GroupManagement', f'user_{group_id}', session['bankid'], "Maker", self.conn)
+            # ── Chart data ────────────────────────────────────────────────
+            chart_data = {}
 
-            return group_id
+            # Bar / Line chart — first text col as labels, all numeric as datasets
+            # Bar / Line chart — smart label detection (skip date columns)
+            def is_date_col(series):
+                try:
+                    converted = pd.to_datetime(series.dropna().head(10), infer_datetime_format=True)
+                    return True
+                except:
+                    return False
 
-    def delete_group(self, group_id, appstatus=None, case=None):
-        group_id = str(group_id)
+            label_col = None
+            # First preference: non-numeric, non-date column (like CHANNEL, REGION etc.)
+            for col in headers:
+                if col not in numeric_cols:
+                    if not is_date_col(df[col]):
+                        label_col = col
+                        break
+            # Second preference: if no text col found, use date col
+            if label_col is None:
+                for col in headers:
+                    if col not in numeric_cols:
+                        label_col = col
+                        break
 
-        if appstatus == 'Approved':
-            copy_row = self.df[self.df['id'] == group_id]
-            original_id = copy_row['appAprrovedby'].values[0]
-            self.df = self.df[~self.df['id'].isin([group_id, original_id])]
-            userdetails = session.get('userdetails')
-            self.save_to_database(self.df[self.df['id'].isin([group_id, original_id])], 'delete',
-                                  [group_id, original_id])
-            log_event(f'log_{int(time.time())}', userdetails.get('UserName'), 'Group deleted',
-                      '/Group_Management_module/GroupManagement', f'group_{original_id}', session['bankid'],
-                      "Maker", self.conn)
+            if label_col:
+                labels = df[label_col].astype(str).head(50).tolist()
+            else:
+                labels = [str(i+1) for i in range(min(50, len(df)))]
 
-        else:
-            old_row = self.df[self.df['id'] == group_id].iloc[0]
-            copyRow = old_row
-            copyRow['id'] = int(time.time())
-            copyRow['appAprrovedby'] = group_id
-            copyRow['appAction'] = 'Pending'
-            self.df.loc[len(self.df)] = copyRow
-            new_id = copyRow['id']
+            datasets = []
+            colors   = ["#6c63ff","#ff6584","#43e97b","#f7971e",
+                        "#4facfe","#f093fb","#fa709a","#fee140","#30cfd0"]
+            for i, col in enumerate(numeric_cols[:6]):
+                datasets.append({
+                    "label": col,
+                    "data":  df[col].head(50).fillna(0).round(2).tolist(),
+                    "color": colors[i % len(colors)]
+                })
 
-        if group_id in self.df['id'].values:
-            self.df.loc[self.df['id'] == new_id, 'appAprrovedby'] = group_id
-            self.df.loc[self.df['id'] == new_id, 'reservedfield1'] = 'delete'
-            group = self.df[self.df['id'] == group_id]
-            userdetails = session.get('userdetails')
-            self.save_to_database(self.df[self.df['id'] == new_id], 'insert', new_id)
-            log_event(f'log_{int(time.time())}', userdetails.get('UserName'), 'Group delete requested',
-                      '/Group_Management_module/GroupManagement', f'group_{group_id}', session['bankid'],
-                      "Maker", self.conn)
+            chart_data["main"] = {"labels": labels, "datasets": datasets}
 
-    def toggle_Group_status(self, GroupId, appstatus=None):
+            # Pie / Doughnut — distribution of first text column categories
+            # Pie / Doughnut — skip date columns, pick meaningful category col
+            cat_cols = [c for c in headers if c not in numeric_cols]
+            cat_col = None
+            for col in cat_cols:
+                if not is_date_col(df[col]):
+                    unique_count = df[col].nunique()
+                    if 2 <= unique_count <= 30:  # meaningful category (not too many unique values)
+                        cat_col = col
+                        break
+            if cat_col is None and cat_cols:
+                cat_col = cat_cols[0]  # fallback to first col
 
-        if appstatus == 'Approved':
-                copy_row = self.df[self.df['id'] == GroupId]
-        if not copy_row.empty:
-            original_id = str(copy_row['appAprrovedby'].values[0])
-            current_status = self.df.loc[self.df['id'] == original_id, 'Status'].iloc[0]
-            new_status = 'Active' if current_status == 'Inactive' else 'Inactive'
-            self.df.loc[self.df['id'] == original_id, 'Status'] = new_status
-            self.save_to_database(
-                self.df.loc[self.df['id'] == original_id],'update', original_id)
+            if cat_col:
+                # Remove total/summary rows
+                filtered = df[cat_col].astype(str)
+                filtered = filtered[~filtered.str.lower().isin(['total', 'grand total', 'subtotal', 'sum', 'overall'])]
+                vc = filtered.value_counts().head(10)
+                chart_data["pie"] = {
+                    "labels": vc.index.astype(str).tolist(),
+                    "data":   vc.values.tolist(),
+                    "colors": colors[:len(vc)]
+                }
 
-            self.save_to_database(copy_row, 'delete', GroupId)
+            # Distribution histogram — first numeric column
+            if numeric_cols:
+                col  = numeric_cols[0]
+                vals = df[col].dropna()
+                counts, bin_edges = np.histogram(vals, bins=10)
+                chart_data["histogram"] = {
+                    "labels": [f"{round(b, 1)}" for b in bin_edges[:-1]],
+                    "data":   counts.tolist(),
+                    "col":    col
+                }
 
-            payload = {
-                "obj": "tbl_GroupMembers",
-                "rowvals": [new_status],
-                "Ckeycols": ["Status"],
-                "wherevals": [original_id],
-                "wherecols": ["id"],
-                "operation": "toggle"
-            }
+            # Column averages
+            if numeric_cols:
+                chart_data["averages"] = {
+                    "labels": numeric_cols[:8],
+                    "data":   [round(float(df[c].mean()), 2) for c in numeric_cols[:8]]
+                }
 
-            url = config["IgniteDumpingUrl"]
-            # requests.post(url, data=payload)
-            self.df = self.df[~self.df['id'].isin([int(GroupId)])]
+            result["sheets"].append({
+                "name":      sheet_name,
+                "headers":   headers,
+                "rows":      rows,
+                "stats":     stats,
+                "col_stats": col_stats,
+                "chart_data": chart_data,
+                "numeric_cols": numeric_cols,
+                "label_col":    label_col,
+            })
 
-        else:
-            old_row = self.df[self.df['id'] == GroupId].iloc[0]
-            copyRow = old_row.copy()
+        return result
 
-            copyRow['id'] = int(time.time())
-            copyRow['appAprrovedby'] = GroupId
-            copyRow['appAction'] = 'Pending'
-            copyRow['reservedfield1'] = 'toggle'
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
 
-            self.df.loc[len(self.df)] = copyRow
-            group_id = copyRow['id']
 
-            if GroupId in self.df['id'].values:
-                current_status = self.df.loc[self.df['id'] == GroupId, 'Status'].iloc[0]
-                new_status = 'Active' if current_status == 'Inactive' else 'Inactive'
-                self.df.loc[self.df['id'] == group_id, 'Status'] = new_status
-                userdetails = session.get('userdetails')
-                username = userdetails.get('UserName')
-                bankid = userdetails.get('bankid')
-                ActionType = "Maker"
-                log_id = f'log_{int(time.time())}'
-                navlink = '/Group_Management_module/GroupManagement'
-                obj_id = f'GroupId_{GroupId}'
-                self.save_to_database(self.df[self.df['id'] == group_id],'insert',group_id)
+@app.get("/health")
+async def health():
+    return {"status": "ok", "message": "MAXIMUS API is running"}
 
-                log_event(id, f"{username}", f'{username} changed status from {current_status} to {new_status}', navlink, obj_id, int(bankid),ActionType, self.conn)
 
-        return new_status
-
-    def get_GroupManagement(self):
-        userdetails = session.get('userdetails')
-        bankid = userdetails['bankid']
-        query = "SELECT * FROM tbl_GroupMembers WHERE bankid = ?"
-        with get_SQL_engine().connect() as connection:
-            self.df = pd.read_sql(query, params=[(bankid,)], con=connection)
-
-        return self.df
